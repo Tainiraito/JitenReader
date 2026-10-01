@@ -11,6 +11,7 @@ import { openOptionsPage } from '@shared/extension/open-options-page';
 import { openView } from '@shared/extension/open-view';
 import { runtime } from '@shared/extension/runtime';
 import { clearRejectedApiToken } from '@shared/jiten/request-by-url';
+import { parseCache } from '@shared/jiten/parse-cache';
 import { OpenReaderModeCommand } from '@shared/messages/foreground/open-reader-mode.command';
 import { ParsePageCommand } from '@shared/messages/foreground/parse-page.command';
 import { ParseSelectionCommand } from '@shared/messages/foreground/parse-selection.command';
@@ -159,13 +160,19 @@ runtime.onMessage.addListener(
 );
 
 onBroadcastMessage('profileSwitched', () => {
+  parseCache.clear();
   invalidateProfileCache();
   invalidateSetConfigurationCache();
   clearRejectedApiToken();
   invalidateStudyDecksCache();
 });
 
-onBroadcastMessage('configurationUpdated', () => clearRejectedApiToken());
+onBroadcastMessage('configurationUpdated', () => {
+  clearRejectedApiToken();
+  parseCache.clear();
+});
+
+onBroadcastMessage('cardStateUpdated', () => parseCache.clear());
 
 async function migrateWordStyleConfig(): Promise<void> {
   const existing = await getConfiguration('wordStyleConfig');

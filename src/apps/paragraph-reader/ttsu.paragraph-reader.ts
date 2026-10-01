@@ -10,7 +10,7 @@ export class TtsuParagraphReader extends ParagraphReader {
     rubyElement: Element | null,
   ): number {
     // Add zero-width space after all ideographic spaces "　" (U+3000)
-    text.data = text.data.replace(/\u3000/g, '\u3000\u200B');
+    text.data = text.data.replace(/\u3000\u200B*/g, '\u3000\u200B');
 
     return super.pushText(fragments, offset, text, hasRuby, rubyElement);
   }

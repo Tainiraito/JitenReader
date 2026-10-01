@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
-    "lint:ff": "node scripts/build.mjs firefox && web-ext lint --source-dir jiten.reader"
+    "lint:ff": "node scripts/build.mjs firefox && web-ext lint --source-dir jiten.reader",
+    "test:parse-cache": "node --test --test-isolation=none scripts/parse-cache.test.cjs"
   },
   "repository": {
     "type": "git",

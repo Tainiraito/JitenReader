@@ -2,6 +2,7 @@ import { getConfiguration } from '../configuration/get-configuration';
 import { displayToast } from '../dom/display-toast';
 import { JitenEndpoints, JitenErrorResponse, JitenRequestOptions } from './api.types';
 import { toConnectionError } from './connection-errors';
+import { parseCache } from './parse-cache';
 import { RateLimitedError } from './rate-limited-error';
 
 const REQUEST_TIMEOUT_MS = 60_000;
@@ -69,26 +70,62 @@ export const requestByUrl = async <Key extends keyof JitenEndpoints>(
   }
 
   const usedUrl = new URL(`${baseUrl}/${action}`);
+  const changesVocabulary = ![
+    'reader/parse',
+    'reader/ping',
+    'reader/lookup-vocabulary',
+    'srs/reader-study-decks',
+  ].includes(action);
+
+  if (changesVocabulary) {
+    parseCache.clear();
+  }
+
   let lastError: unknown;
 
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    let response: Response | undefined;
+  try {
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      let response: Response | undefined;
 
-    try {
-      response = await fetch(usedUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `ApiKey ${apiToken}`,
-          Accept: 'application/json',
-        },
-        body: params ? JSON.stringify(params) : undefined,
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      });
-    } catch (error) {
-      lastError = error;
+      try {
+        response = await fetch(usedUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `ApiKey ${apiToken}`,
+            Accept: 'application/json',
+          },
+          body: params ? JSON.stringify(params) : undefined,
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        });
+      } catch (error) {
+        lastError = error;
 
-      if (attempt < MAX_RETRIES - 1) {
+        if (attempt < MAX_RETRIES - 1) {
+          const backoff = INITIAL_BACKOFF_MS * 2 ** attempt;
+
+          await wait(backoff + Math.random() * backoff * 0.5);
+
+          continue;
+        }
+
+        throw toConnectionError(error);
+      }
+
+      if (response.status === 401 || response.status === 403) {
+        rejectedApiToken = apiToken;
+
+        throw new Error(API_KEY_REJECTED_MESSAGE);
+      }
+
+      if (
+        response.status === 429 &&
+        (options?.failFastOnRateLimit || attempt === MAX_RETRIES - 1)
+      ) {
+        throw new RateLimitedError(parseRetryAfter(response.headers.get('Retry-After')));
+      }
+
+      if (!response.ok && isRetryable(null, response) && attempt < MAX_RETRIES - 1) {
         const backoff = INITIAL_BACKOFF_MS * 2 ** attempt;
 
         await wait(backoff + Math.random() * backoff * 0.5);
@@ -96,39 +133,25 @@ export const requestByUrl = async <Key extends keyof JitenEndpoints>(
         continue;
       }
 
-      throw toConnectionError(error);
+      const responseObject = (await response.json()) as JitenErrorResponse | JitenEndpoints[Key][1];
+
+      if ('error_message' in (responseObject as JitenErrorResponse)) {
+        throw new Error((responseObject as JitenErrorResponse).error_message);
+      }
+
+      if (apiToken === rejectedApiToken) {
+        rejectedApiToken = undefined;
+      }
+
+      return responseObject as JitenEndpoints[Key][1];
     }
 
-    if (response.status === 401 || response.status === 403) {
-      rejectedApiToken = apiToken;
-
-      throw new Error(API_KEY_REJECTED_MESSAGE);
+    throw lastError;
+  } finally {
+    if (changesVocabulary) {
+      // A failed response can still accompany a server-side change.
+      // Discard results parsed during the mutation on both success and failure.
+      parseCache.clear();
     }
-
-    if (response.status === 429 && (options?.failFastOnRateLimit || attempt === MAX_RETRIES - 1)) {
-      throw new RateLimitedError(parseRetryAfter(response.headers.get('Retry-After')));
-    }
-
-    if (!response.ok && isRetryable(null, response) && attempt < MAX_RETRIES - 1) {
-      const backoff = INITIAL_BACKOFF_MS * 2 ** attempt;
-
-      await wait(backoff + Math.random() * backoff * 0.5);
-
-      continue;
-    }
-
-    const responseObject = (await response.json()) as JitenErrorResponse | JitenEndpoints[Key][1];
-
-    if ('error_message' in (responseObject as JitenErrorResponse)) {
-      throw new Error((responseObject as JitenErrorResponse).error_message);
-    }
-
-    if (apiToken === rejectedApiToken) {
-      rejectedApiToken = undefined;
-    }
-
-    return responseObject as JitenEndpoints[Key][1];
   }
-
-  throw lastError;
 };
