@@ -4,7 +4,7 @@ import { JitenEndpoints, JitenErrorResponse, JitenRequestOptions } from './api.t
 import { toConnectionError } from './connection-errors';
 import { RateLimitedError } from './rate-limited-error';
 
-const REQUEST_TIMEOUT_MS = 10_000;
+const REQUEST_TIMEOUT_MS = 60_000;
 const MAX_RETRIES = 3;
 const INITIAL_BACKOFF_MS = 500;
 const DEFAULT_RETRY_AFTER_MS = 5_000;

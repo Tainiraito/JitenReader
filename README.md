@@ -1,3 +1,17 @@
+## 本地测试版：60 秒请求超时
+
+个人分支：`personal/jiten-custom`。基于上游 v1.4.0（388f5fe5ae9e2d8b8b090fa9c64c2ea1e9104a6d）。将 API 请求超时从 10 秒改为 60 秒，名称改为 Jiten Reader (60s timeout)，方便区分。此超时作用于所有使用该请求函数的 Jiten API 调用；解析范围及批次逻辑保持原样。
+
+构建：npm ci，然后 npm run build chrome。构建目录为 jiten.reader。
+
+Chrome 安装：打开 chrome://extensions，先停用商店版 Jiten Reader，开启开发者模式，点击“加载已解压的扩展程序”，选择本仓库的 jiten.reader 文件夹（其中包含 manifest.json）。进入新扩展设置填写自己的 API Key，刷新 Ttsu 后测试。新扩展有独立设置，不会自动继承商店版设置。
+
+请保持此文件夹位置固定；恢复商店版时停用本测试版并重新启用商店版。不要同时启用两个版本。
+
+验证：Chrome 构建成功，构建产物含 60000ms 超时，主要 JS 语法检查通过，manifest 引用存在。独立 TypeScript 检查存在上游原有错误；与还原请求文件后的输出逐字一致，详见 TYPECHECK-UPSTREAM.txt。尚待用户在 Chrome/Ttsu 实测。
+
+---
+
 # Jiten Reader
 
 A browser extension to parse Japanese texts anywhere, get your coverage and keep track of words you know, powered by [Jiten](https://jiten.moe).
