@@ -88,7 +88,7 @@ export const DEFAULT_CONFIGURATION = Object.freeze<ConfigurationSchema>({
   minSentenceLength: 3,
   iPlusOneMaxFrequency: false,
   iPlusOneMaxFrequencyCount: 15_000,
-  skipFurigana: false,
+  skipFurigana: true,
   furiganaOnlyOnNew: false,
   generatePitch: true,
   markWordsInDeck: false,
@@ -111,7 +111,7 @@ export const DEFAULT_CONFIGURATION = Object.freeze<ConfigurationSchema>({
 
   // Popup settings
   hideAfterAction: true,
-  hidePopupAutomatically: true,
+  hidePopupAutomatically: false,
   hidePopupDelay: 500,
 
   showMiningActions: true,

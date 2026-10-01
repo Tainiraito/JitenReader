@@ -2,6 +2,8 @@
 
 个人分支：`personal/jiten-custom`。基于上游 v1.4.0（388f5fe5ae9e2d8b8b090fa9c64c2ea1e9104a6d）。将 API 请求超时从 10 秒改为 60 秒，名称改为 Jiten Reader (60s timeout)，方便区分。此超时作用于所有使用该请求函数的 Jiten API 调用；解析范围及批次逻辑保持原样。
 
+个人默认值：`hidePopupAutomatically: false`（关闭移开鼠标后自动隐藏弹窗）；`skipFurigana: true`（阻止生成注音）。这些是未保存设置的默认值，已保存的个人设置优先；不会强制覆盖浏览器配置。
+
 构建：npm ci，然后 npm run build chrome。构建目录为 jiten.reader。
 
 Chrome 安装：打开 chrome://extensions，先停用商店版 Jiten Reader，开启开发者模式，点击“加载已解压的扩展程序”，选择本仓库的 jiten.reader 文件夹（其中包含 manifest.json）。进入新扩展设置填写自己的 API Key，刷新 Ttsu 后测试。新扩展有独立设置，不会自动继承商店版设置。
