@@ -1,6 +1,8 @@
-# Long-text validation — personal/parse-cache
+# Long-text validation — personal/all-in-one
 
 Date: 2026-10-02. Baseline: upstream v1.4.0 and the existing personal timeout/defaults branch.
+
+The personal/all-in-one branch retains the validated personal/parse-cache implementation and merges the configurable API timeout feature. The personal default remains 60 seconds, adjustable per profile from 1 to 300 seconds. All 22 cache tests and 4 timeout tests pass together. The built settings page also passes isolated Chrome checks for personal defaults, persistence, validation and profile isolation; evidence is in ../验证/综合自用版. Storage/runtime are simulated and no live API is called. The separate upstream contribution branch retains its 10-second default.
 
 ## Regression checks
 

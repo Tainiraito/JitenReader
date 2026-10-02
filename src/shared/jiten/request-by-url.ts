@@ -1,12 +1,12 @@
 import { getConfiguration } from '../configuration/get-configuration';
 import { displayToast } from '../dom/display-toast';
+import { getApiRequestTimeoutMs } from './api-request-timeout';
 import { JitenEndpoints, JitenErrorResponse, JitenRequestOptions } from './api.types';
 import { toConnectionError } from './connection-errors';
 import { parseCache } from './parse-cache';
 import { WordReference } from './parse-cache.types';
 import { RateLimitedError } from './rate-limited-error';
 
-const REQUEST_TIMEOUT_MS = 60_000;
 const MAX_RETRIES = 3;
 const INITIAL_BACKOFF_MS = 500;
 const DEFAULT_RETRY_AFTER_MS = 5_000;
@@ -53,9 +53,9 @@ export const isApiTokenRejected = async (): Promise<boolean> => {
 
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-const requestError = (error: unknown, action: string, stage: string): Error =>
+const requestError = (error: unknown, action: string, stage: string, timeoutMs: number): Error =>
   error instanceof DOMException && error.name === 'TimeoutError'
-    ? new Error(`Jiten request timed out after ${REQUEST_TIMEOUT_MS / 1000}s (${action}; ${stage})`)
+    ? new Error(`Jiten request timed out after ${timeoutMs / 1000}s (${action}; ${stage})`)
     : toConnectionError(error);
 
 const parseRetryAfter = (header: string | null): number => {
@@ -97,6 +97,7 @@ export const requestByUrl = async <Key extends keyof JitenEndpoints>(
   }
 
   const usedUrl = new URL(`${baseUrl}/${action}`);
+  const requestTimeoutMs = getApiRequestTimeoutMs(await getConfiguration('jitenApiTimeout'));
   const changesVocabulary = ![
     'reader/parse',
     'reader/ping',
@@ -113,7 +114,7 @@ export const requestByUrl = async <Key extends keyof JitenEndpoints>(
   try {
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       let response: Response | undefined;
-      const signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+      const signal = AbortSignal.timeout(requestTimeoutMs);
 
       try {
         response = await fetch(usedUrl, {
@@ -141,6 +142,7 @@ export const requestByUrl = async <Key extends keyof JitenEndpoints>(
           signal.aborted ? signal.reason : error,
           action,
           'waiting for response headers',
+          requestTimeoutMs,
         );
       }
 
@@ -175,6 +177,7 @@ export const requestByUrl = async <Key extends keyof JitenEndpoints>(
             signal.aborted ? signal.reason : error,
             action,
             'reading response body',
+            requestTimeoutMs,
           );
         }
 

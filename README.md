@@ -1,6 +1,6 @@
-## 个人版本：60 秒超时与长文解析优化
+## 个人综合版本：可配置超时与长文解析优化
 
-当前分支：personal/parse-cache，基于 personal/jiten-custom 和上游 v1.4.0（388f5fe5ae9e2d8b8b090fa9c64c2ea1e9104a6d）。原个人分支保留。本次保留 60 秒 API 超时、hidePopupAutomatically=false、skipFurigana=true。浏览器已保存的设置优先。
+当前自用来源分支：personal/all-in-one，合并 personal/parse-cache 与 feature/configurable-api-timeout。原分支及上游 v1.4.0（388f5fe5ae9e2d8b8b090fa9c64c2ea1e9104a6d）保留。默认 hidePopupAutomatically=false、skipFurigana=true；API 超时默认 60 秒，可在 Jiten Integration → API Request Timeout (seconds) 调整为 1–300 秒整数，按配置档保存。浏览器已保存的设置优先；新增超时设置缺省使用 60 秒，不覆盖 API Key 或已有设置。上游贡献预备分支仍独立保持 10 秒默认值。
 
 ### 长文缓存与调度
 
@@ -19,11 +19,13 @@ Ttsu 空白预处理保持幂等，高亮渲染完成后再确认该批次完成
 
 重新加载扩展后，已打开页面中的旧 content script 会失效，可能记录 Extension context invalidated；随后刷新全部已打开的 Ttsu 阅读页。Chrome 的扩展错误列表会保留历史记录，可点击“全部清除”后重新测试；清除错误记录不会删除解析缓存。
 
-停止语音播放现在先检查 offscreen 播放页面，缺少接收方时直接结束，并处理页面关闭竞态，避免未捕获的消息拒绝。截图中无调用栈的 Receiving end does not exist 不足以确认唯一来源，此修复覆盖代码中确认的一处缺口。解析响应头等待与响应体下载超时现在包含接口名、60 秒限制和阶段；超时仍可能由网络或服务处理引起，需结合新错误和 Network Timing 判断。
+停止语音播放现在先检查 offscreen 播放页面，缺少接收方时直接结束，并处理页面关闭竞态，避免未捕获的消息拒绝。截图中无调用栈的 Receiving end does not exist 不足以确认唯一来源，此修复覆盖代码中确认的一处缺口。解析响应头等待与响应体下载超时包含接口名、本次实际配置的秒数和阶段；超时仍可能由网络或服务处理引起，需结合新错误和 Network Timing 判断。
 
 ### 验证与试用
 
-npm run test:parse-cache：22 项测试通过，包括状态 TTL、定向失效、广播竞态、账户隔离、持久化恢复、并发去重、可见批次优先和取消旧请求。改动文件 ESLint 通过，Chrome 构建成功。全仓 TypeScript 检查仍有上游已有错误，与 TYPECHECK-UPSTREAM.txt 对照未新增错误。
+npm run test:parse-cache：22 项测试通过，包括状态 TTL、定向失效、广播竞态、账户隔离、持久化恢复、并发去重、可见批次优先和取消旧请求。另有 4 项 API 超时测试（scripts/api-timeout.test.cjs），验证个人默认 60 秒、动态配置读取、响应正文超时及实际秒数错误提示；26 项合并运行全部通过。改动文件 ESLint 通过，Chrome 构建成功。全仓 TypeScript 检查仍有上游已有错误，与 TYPECHECK-UPSTREAM.txt 对照未新增错误。
+
+综合版设置页使用实际构建产物在隔离 Chrome 中验证：60 秒默认值、关闭弹窗自动隐藏、开启禁生成注音、修改超时并刷新保留、非法值拒绝及配置档隔离均通过。桌面及 390px 手机宽度布局正常，没有页面脚本错误。此验证模拟扩展存储和消息接口，不调用线上 API；记录位于 ../验证/综合自用版。
 
 独立 Chrome 的 Ttsu 布局测试使用真实段落读取、高亮、调度及 IndexedDB 实现，API 返回模拟数据：横排/竖排翻页、1→2→1 缓存复用、浏览器重启恢复、词典去重及磁盘 LRU 均通过，无页面脚本错误。测试没有调用用户账户或线上 Jiten API；用户真实书籍与网络环境仍待验收。详情见 LONG-TEXT-VALIDATION.md。
 
@@ -138,6 +140,8 @@ Upon installation, the settings page will open. You can also find it by clicking
 
 Here you will need to enter your Jiten API key. It can be found at the very bottom of the [Jiten settings page](https://jiten.moe/settings).  
 You can also change various hotkeys.
+
+In **Jiten Integration**, **API Request Timeout (seconds)** controls the maximum time for each Jiten API request, including downloading the response. This personal build defaults to 60 seconds; set a whole number from 1 to 300 seconds for slower connections or larger parsing responses. This setting is saved per profile and applies to subsequent requests; existing requests retain their original timeout. Each retry has its own timeout. It does not change the separate audio playback timeout.
 
 ## Usage
 

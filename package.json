@@ -13,6 +13,7 @@
     "changelog": "tsc changelog/changelog.ts && node scripts/changelog.mjs && git add CHANGELOG.md src/views/changelog.html",
     "release": "node scripts/build.mjs --pack --ff-submission",
     "typecheck": "tsc --noEmit",
+    "test:api-timeout": "node --test scripts/api-timeout.test.cjs",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
     "lint:ff": "node scripts/build.mjs firefox && web-ext lint --source-dir jiten.reader",

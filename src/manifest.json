@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Jiten Reader (60s timeout)",
+  "name": "Jiten Reader (Personal)",
   "version": "1.4.0",
   "description": "Japanese text parsing with Jiten",
   "minimum_chrome_version": "116",
