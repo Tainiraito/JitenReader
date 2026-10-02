@@ -66,6 +66,65 @@ const response = (texts, state = 0) => ({
   vocabulary: [word(state)],
 });
 
+test('stopping TTS without an offscreen receiver is safe, including closure races', async () => {
+  let contexts = [],
+    sent = 0,
+    failure;
+  const { stopTtsAudio } = loadTs('src/background-worker/lib/stop-tts-audio.ts', {
+    '@shared/extension/runtime': {
+      runtime: {
+        ContextType: { OFFSCREEN_DOCUMENT: 'OFFSCREEN_DOCUMENT' },
+        getContexts: async () => contexts,
+        sendMessage: async () => {
+          sent++;
+          if (failure) throw failure;
+        },
+      },
+    },
+  });
+  await stopTtsAudio();
+  assert.equal(sent, 0);
+  contexts = [{}];
+  await stopTtsAudio();
+  assert.equal(sent, 1);
+  failure = Error('Could not establish connection. Receiving end does not exist.');
+  await stopTtsAudio();
+  assert.equal(sent, 2);
+  failure = Error('Unexpected failure');
+  await assert.rejects(stopTtsAudio(), /Unexpected failure/);
+});
+
+test('response body timeout identifies the API and 60-second limit without request secrets', async () => {
+  const originalFetch = global.fetch;
+  const { requestByUrl } = loadTs('src/shared/jiten/request-by-url.ts', {
+    '../configuration/get-configuration': { getConfiguration: async () => 'private-key' },
+    '../dom/display-toast': { displayToast() {} },
+    './parse-cache': { parseCache: { invalidateStates() {} } },
+  });
+  global.fetch = async (_url, options) => {
+    assert.ok(options.signal instanceof AbortSignal);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new DOMException('signal timed out', 'TimeoutError');
+      },
+    };
+  };
+  try {
+    await assert.rejects(
+      requestByUrl('https://example.test/api', 'reader/parse', { text: ['private text'] }),
+      (error) => {
+        assert.match(error.message, /60s.*reader\/parse.*reading response body/);
+        assert.ok(!error.message.includes('private'));
+        return true;
+      },
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('viewport batch completion waits for asynchronous highlighter rendering', async () => {
   const sequences = [];
   let rendered = false,

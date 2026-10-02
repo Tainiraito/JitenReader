@@ -15,9 +15,15 @@ Ttsu 空白预处理保持幂等，高亮渲染完成后再确认该批次完成
 
 内容缓存保存书籍段落和词典结果，仅存在本地。数据库为 jiten-parser-content-v2。需要强制重新解析时，可在扩展后台 DevTools 的 Application → IndexedDB 中删除该数据库，再重新加载扩展并刷新阅读页；一般复习无需清空它。卸载扩展也会删除其本地数据。存储不可用时退回内存缓存。
 
+### Chrome 错误排查
+
+重新加载扩展后，已打开页面中的旧 content script 会失效，可能记录 Extension context invalidated；随后刷新全部已打开的 Ttsu 阅读页。Chrome 的扩展错误列表会保留历史记录，可点击“全部清除”后重新测试；清除错误记录不会删除解析缓存。
+
+停止语音播放现在先检查 offscreen 播放页面，缺少接收方时直接结束，并处理页面关闭竞态，避免未捕获的消息拒绝。截图中无调用栈的 Receiving end does not exist 不足以确认唯一来源，此修复覆盖代码中确认的一处缺口。解析响应头等待与响应体下载超时现在包含接口名、60 秒限制和阶段；超时仍可能由网络或服务处理引起，需结合新错误和 Network Timing 判断。
+
 ### 验证与试用
 
-npm run test:parse-cache：20 项测试通过，包括状态 TTL、定向失效、广播竞态、账户隔离、持久化恢复、并发去重、可见批次优先和取消旧请求。改动文件 ESLint 通过，Chrome 构建成功。全仓 TypeScript 检查仍有上游已有错误，与 TYPECHECK-UPSTREAM.txt 对照未新增错误。
+npm run test:parse-cache：22 项测试通过，包括状态 TTL、定向失效、广播竞态、账户隔离、持久化恢复、并发去重、可见批次优先和取消旧请求。改动文件 ESLint 通过，Chrome 构建成功。全仓 TypeScript 检查仍有上游已有错误，与 TYPECHECK-UPSTREAM.txt 对照未新增错误。
 
 独立 Chrome 的 Ttsu 布局测试使用真实段落读取、高亮、调度及 IndexedDB 实现，API 返回模拟数据：横排/竖排翻页、1→2→1 缓存复用、浏览器重启恢复、词典去重及磁盘 LRU 均通过，无页面脚本错误。测试没有调用用户账户或线上 Jiten API；用户真实书籍与网络环境仍待验收。详情见 LONG-TEXT-VALIDATION.md。
 

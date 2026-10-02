@@ -33,6 +33,7 @@ import { openClipboardReader } from './lib/open-clipboard-reader';
 import { OpenClipboardReaderCommandHandler } from './lib/open-clipboard-reader-command.handler';
 import { OpenSettingsCommandHandler } from './lib/open-settings-command.handler';
 import { initParsingPausedIcon } from './lib/parsing-paused-icon';
+import { stopTtsAudio } from './lib/stop-tts-audio';
 import { UpdateBadgeCommandHandler } from './lib/update-badge-command.handler';
 import { LookupController } from './lookup/lookup-controller';
 import { LookupTextCommandHandler } from './lookup/lookup-text-command.handler';
@@ -124,9 +125,11 @@ runtime.onMessage.addListener(
     sendResponse: (response: unknown) => void,
   ) => {
     if (message.type === 'stopTts') {
-      void runtime.sendMessage({ type: 'stopTtsAudio' });
+      void stopTtsAudio()
+        .then(() => sendResponse({ ok: true }))
+        .catch((error: Error) => sendResponse({ ok: false, error: error.message }));
 
-      return false;
+      return true;
     }
 
     if (message.type !== 'playTts') {

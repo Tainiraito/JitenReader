@@ -53,6 +53,11 @@ export const isApiTokenRejected = async (): Promise<boolean> => {
 
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+const requestError = (error: unknown, action: string, stage: string): Error =>
+  error instanceof DOMException && error.name === 'TimeoutError'
+    ? new Error(`Jiten request timed out after ${REQUEST_TIMEOUT_MS / 1000}s (${action}; ${stage})`)
+    : toConnectionError(error);
+
 const parseRetryAfter = (header: string | null): number => {
   const seconds = Number(header);
 
@@ -108,6 +113,7 @@ export const requestByUrl = async <Key extends keyof JitenEndpoints>(
   try {
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       let response: Response | undefined;
+      const signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
 
       try {
         response = await fetch(usedUrl, {
@@ -118,7 +124,7 @@ export const requestByUrl = async <Key extends keyof JitenEndpoints>(
             Accept: 'application/json',
           },
           body: params ? JSON.stringify(params) : undefined,
-          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+          signal,
         });
       } catch (error) {
         lastError = error;
@@ -131,7 +137,11 @@ export const requestByUrl = async <Key extends keyof JitenEndpoints>(
           continue;
         }
 
-        throw toConnectionError(error);
+        throw requestError(
+          signal.aborted ? signal.reason : error,
+          action,
+          'waiting for response headers',
+        );
       }
 
       if (response.status === 401 || response.status === 403) {
@@ -155,7 +165,21 @@ export const requestByUrl = async <Key extends keyof JitenEndpoints>(
         continue;
       }
 
-      const responseObject = (await response.json()) as JitenErrorResponse | JitenEndpoints[Key][1];
+      let responseObject: JitenErrorResponse | JitenEndpoints[Key][1];
+
+      try {
+        responseObject = (await response.json()) as JitenErrorResponse | JitenEndpoints[Key][1];
+      } catch (error) {
+        if (error instanceof DOMException) {
+          throw requestError(
+            signal.aborted ? signal.reason : error,
+            action,
+            'reading response body',
+          );
+        }
+
+        throw error;
+      }
 
       if ('error_message' in (responseObject as JitenErrorResponse)) {
         throw new Error((responseObject as JitenErrorResponse).error_message);

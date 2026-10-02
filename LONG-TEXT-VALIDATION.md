@@ -4,7 +4,7 @@ Date: 2026-10-02. Baseline: upstream v1.4.0 and the existing personal timeout/de
 
 ## Regression checks
 
-Run `npm run test:parse-cache` (Node 24). All 20 tests pass. Coverage includes independent state refresh and targeted review invalidation, racing broadcasts, hashed account/server scopes, concurrent paragraph requests, failed responses, disk restoration under memory pressure, forced clearing during pending requests, cancellation of old page waits, bounded priority dispatch, and the real API-wrapper/Parser conversion chain.
+Run `npm run test:parse-cache` (Node 24). All 22 tests pass. Coverage includes independent state refresh and targeted review invalidation, racing broadcasts, hashed account/server scopes, concurrent paragraph requests, failed responses, disk restoration under memory pressure, forced clearing during pending requests, cancellation of old page waits, bounded priority dispatch, and the real API-wrapper/Parser conversion chain.
 
 Run ESLint on changed TypeScript files, and `npm run build chrome`. Both pass. Full `npm run typecheck` still reports upstream errors; comparing normalized diagnostic lines with `TYPECHECK-UPSTREAM.txt` shows no new diagnostics. Broadcast schema updates remove some existing errors.
 
