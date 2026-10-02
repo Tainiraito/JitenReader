@@ -104,6 +104,8 @@ Upon installation, the settings page will open. You can also find it by clicking
 Here you will need to enter your Jiten API key. It can be found at the very bottom of the [Jiten settings page](https://jiten.moe/settings).  
 You can also change various hotkeys.
 
+In **Jiten Integration**, **API Request Timeout (seconds)** controls the maximum time for each Jiten API request, including downloading the response. The default is 10 seconds; set a whole number from 1 to 300 seconds for slower connections or larger parsing responses. This setting is saved per profile and applies to subsequent requests; existing requests retain their original timeout. Each retry has its own timeout. It does not change the separate audio playback timeout.
+
 ## Usage
 
 You can use the reader on any website. Just select some text, right-click, and choose the "Jiten Reader > Parse Election" option. Alternatively, use the shortcut (Alt+P) or the extension menu at the top right corner.

@@ -11,6 +11,7 @@ import { CLIPBOARD_READER_STORAGE_KEY } from '@shared/extension/clipboard-reader
 import { getParsingPaused } from '@shared/extension/get-parsing-paused';
 import { onParsingPausedChanged } from '@shared/extension/on-parsing-paused-changed';
 import { setParsingPaused } from '@shared/extension/set-parsing-paused';
+import { isValidApiRequestTimeout } from '@shared/jiten/api-request-timeout';
 import { fetchStudyDecks } from '@shared/jiten/fetch-study-decks';
 import { ping } from '@shared/jiten/ping';
 import { StudyDeckType } from '@shared/jiten/types';
@@ -54,6 +55,18 @@ const validators: Partial<
   Record<keyof ConfigurationSchema, (value: unknown) => boolean | Promise<boolean>>
 > = {
   jitenApiKey: validateJitenApiKey,
+  jitenApiTimeout: (value) => {
+    const valid = isValidApiRequestTimeout(Number(value));
+
+    if (!valid) {
+      displayToast(
+        'error',
+        'API request timeout must be a whole number between 1 and 300 seconds.',
+      );
+    }
+
+    return valid;
+  },
 };
 
 const configurationUpdatedCommand = new ConfigurationUpdatedCommand();
@@ -170,7 +183,11 @@ withElements(
       // Apply change listeners
       .then(() => {
         field.onchange = (): void => {
-          const value = checkbox ? field.checked : field.value;
+          const value = checkbox
+            ? field.checked
+            : field.name === 'jitenApiTimeout'
+              ? field.valueAsNumber
+              : field.value;
 
           void validateAndSet(field.name as keyof ConfigurationSchema, value, async () => {
             await setConfiguration(field.name as keyof ConfigurationSchema, value);
