@@ -6,7 +6,13 @@ import { PotentialPromise } from '../../types';
  */
 export interface BroadcastEvents {
   configurationUpdated: [];
-  cardStateUpdated: [wordId: number, readingIndex: number, cardstate: JitenCardState[]];
+  cardStateUpdated: [
+    wordId: number,
+    readingIndex: number,
+    cardstate: JitenCardState[],
+    deckIds?: number[],
+  ];
+  profileSwitched: [profileId: string];
   parsingPaused: [paused: boolean];
 }
 export type BroadcastEventArgs<T extends keyof BroadcastEvents> = BroadcastEvents[T];

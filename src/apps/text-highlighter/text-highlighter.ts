@@ -16,6 +16,10 @@ export class TextHighlighter extends BaseTextHighlighter {
     void this.applyAsync();
   }
 
+  public applyAndWait(): Promise<void> {
+    return this.applyAsync();
+  }
+
   /**
    * Preprocess the data - this maps tokens and fragment relations as well as applies error correction
    */

@@ -3,6 +3,7 @@ import { displayToast } from '../dom/display-toast';
 import { JitenEndpoints, JitenErrorResponse, JitenRequestOptions } from './api.types';
 import { toConnectionError } from './connection-errors';
 import { parseCache } from './parse-cache';
+import { WordReference } from './parse-cache.types';
 import { RateLimitedError } from './rate-limited-error';
 
 const REQUEST_TIMEOUT_MS = 60_000;
@@ -16,6 +17,27 @@ const API_KEY_REJECTED_MESSAGE =
 // Latches the token that was rejected with 401/403 so subsequent requests fail
 // fast without hitting the API until the key is changed or revalidated.
 let rejectedApiToken: string | undefined;
+
+const affectedWords = (params: unknown): WordReference[] | undefined => {
+  if (!params || typeof params !== 'object') {
+    return undefined;
+  }
+
+  if ('reviews' in params && Array.isArray(params.reviews)) {
+    return params.reviews.flatMap((review: unknown) => affectedWords(review) ?? []);
+  }
+
+  if (
+    'wordId' in params &&
+    'readingIndex' in params &&
+    typeof params.wordId === 'number' &&
+    typeof params.readingIndex === 'number'
+  ) {
+    return [{ wordId: params.wordId, readingIndex: params.readingIndex }];
+  }
+
+  return undefined;
+};
 
 export const clearRejectedApiToken = (): void => {
   rejectedApiToken = undefined;
@@ -78,7 +100,7 @@ export const requestByUrl = async <Key extends keyof JitenEndpoints>(
   ].includes(action);
 
   if (changesVocabulary) {
-    parseCache.clear();
+    parseCache.invalidateStates(affectedWords(params));
   }
 
   let lastError: unknown;
@@ -150,8 +172,8 @@ export const requestByUrl = async <Key extends keyof JitenEndpoints>(
   } finally {
     if (changesVocabulary) {
       // A failed response can still accompany a server-side change.
-      // Discard results parsed during the mutation on both success and failure.
-      parseCache.clear();
+      // Refresh account state after both successful and failed mutations.
+      parseCache.invalidateStates(affectedWords(params));
     }
   }
 };

@@ -1,5 +1,5 @@
-import type { applyTokens } from './apply-tokens';
 import type { getParagraphs } from './get-paragraphs';
+import type { JitenToken } from '@shared/jiten/types';
 
 export type Fragment = {
   node: Text | CDATASection;
@@ -10,13 +10,14 @@ export type Fragment = {
   rubyElement?: Element;
 };
 export type Paragraph = Fragment[];
+export type ApplyTokens = (fragments: Fragment[], tokens: JitenToken[]) => void | Promise<void>;
 
 export type DisplayCategory = 'none' | 'text' | 'ruby' | 'ruby-text' | 'block' | 'inline';
 export type RegisterOptions = {
   filter?: (node: Element | Node) => boolean;
   onEmpty?: (node: Element | Node) => void;
   getParagraphsFn?: typeof getParagraphs;
-  applyFn?: typeof applyTokens;
+  applyFn?: ApplyTokens;
   collapseWhitespace?: boolean;
   onComplete?: () => void;
 };

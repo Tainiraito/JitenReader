@@ -1,242 +1,294 @@
-import type { JitenParseResult, JitenRawVocabulary, JitenToken } from './types';
+import { IndexedDbContentStorage } from './parse-cache-storage';
+import {
+  ContentStorage,
+  ParagraphContent,
+  VocabularyState,
+  WordReference,
+  vocabularyKey,
+} from './parse-cache.types';
+import type { JitenParseResult, JitenRawVocabulary } from './types';
 
-type Paragraph = { tokens: JitenToken[]; vocabulary: JitenRawVocabulary[] };
-type Entry = { value: Paragraph; expiresAt: number };
-type Snapshot = {
-  version: 1;
-  entries: [string, { tokens: JitenToken[]; words: string[]; expiresAt: number }][];
-  vocabulary: [string, JitenRawVocabulary][];
-};
-type Storage = { load: () => Promise<unknown>; save: (snapshot: Snapshot) => Promise<void> };
 type Loader = (paragraphs: string[]) => Promise<JitenParseResult>;
-
-const TTL_MS = 30 * 60_000;
-const MAX_BYTES = 4 * 1024 * 1024;
+type StateLoader = (words: WordReference[]) => Promise<VocabularyState[]>;
+type Options = { stateScope: string; refreshStates: StateLoader };
+type StateEntry = VocabularyState & { updatedAt: number };
+const STATE_TTL_MS = 5 * 60_000;
+const MAX_MEMORY_BYTES = 8 * 1024 * 1024;
 const MAX_ENTRIES = 2000;
 
-// Cache raw API results, never DOM nodes. Tokens keep their exact text offsets.
-// Snapshot vocabulary is deduplicated so repeated words don't fill session storage.
+// Stable tokenization/definitions and mutable account state have separate lifetimes.
+// Content never expires by time; a parser/server namespace change or LRU can miss.
 export class ParseCache {
-  private entries = new Map<string, Entry>();
-  private pending = new Map<string, Promise<Paragraph>>();
+  private entries = new Map<string, { value: ParagraphContent; bytes: number }>();
+  private bytes = 0;
+  private pending = new Map<string, Promise<ParagraphContent>>();
+  private states = new Map<string, StateEntry>();
+  private stateRequests = new Map<string, Promise<void>>();
   private generation = 0;
-  private ready?: Promise<void>;
+  private stateGeneration = 0;
   private writes = Promise.resolve();
 
   constructor(
-    private storage?: Storage,
+    private storage?: ContentStorage,
     private now = Date.now,
-    private maxBytes = MAX_BYTES,
+    private maxBytes = MAX_MEMORY_BYTES,
     private maxEntries = MAX_ENTRIES,
   ) {}
 
-  public clear(): void {
+  /** Explicit force-reparse only. Reviews must never delete content. */
+  public async clear(): Promise<void> {
     this.generation++;
     this.entries.clear();
+    this.bytes = 0;
     this.pending.clear();
-    this.persist();
+    this.invalidateStates();
+    this.writes = this.writes
+      .catch(() => undefined)
+      .then(() => this.storage?.clear())
+      .then(() => undefined);
+    await this.writes;
   }
 
-  public async parse(scope: string, texts: string[], loader: Loader): Promise<JitenParseResult> {
-    await this.initialize();
+  public invalidateStates(words?: WordReference[]): void {
+    this.stateGeneration++;
+    this.stateRequests.clear();
+
+    if (!words) {
+      this.states.clear();
+
+      return;
+    }
+    const affected = new Set(words.map(vocabularyKey));
+
+    for (const key of this.states.keys()) {
+      if (affected.has((JSON.parse(key) as [string, string])[1])) {
+        this.states.delete(key);
+      }
+    }
+  }
+
+  public updateState(scope: string, word: WordReference, value: VocabularyState): void {
+    this.stateGeneration++;
+    this.setState(scope, word, value);
+  }
+
+  public async parse(
+    scope: string,
+    texts: string[],
+    loader: Loader,
+    options?: Options,
+  ): Promise<JitenParseResult> {
     const generation = this.generation;
+    const stateScope = options?.stateScope ?? scope;
+    const keys = texts.map((text) => JSON.stringify([scope, text]));
+    let restored = new Map<string, ParagraphContent>();
+
+    if (this.storage) {
+      try {
+        await this.writes;
+        const missing = [
+          ...new Set(keys.filter((key) => !this.entries.has(key) && !this.pending.has(key))),
+        ];
+        const saved = missing.length
+          ? await this.storage.load(missing)
+          : new Map<string, ParagraphContent>();
+
+        if (generation === this.generation) {
+          restored = saved;
+          saved.forEach((value, key) => this.remember(key, value));
+        }
+      } catch {
+        /* Private-mode/quota failures must not prevent reading. */
+      }
+    }
     const missing = new Map<string, string>();
-    const waiting = texts.map((text) => {
-      const key = JSON.stringify([scope, text]);
+    const waiting = keys.map((key, i) => {
       const cached = this.entries.get(key);
 
-      if (cached && cached.expiresAt > this.now()) {
+      if (cached) {
         this.entries.delete(key);
         this.entries.set(key, cached);
 
         return Promise.resolve(cached.value);
       }
-
-      this.entries.delete(key);
       const pending = this.pending.get(key);
 
       if (pending) {
         return pending;
       }
+      const saved = restored.get(key);
 
-      missing.set(key, text);
+      if (saved) {
+        return Promise.resolve(saved);
+      }
+      missing.set(key, texts[i]);
 
-      // Actual pending promises are installed below before calling the loader.
       return key;
     });
 
     if (missing.size) {
-      const keys = [...missing.keys()];
-      const request = Promise.resolve().then(() => loader([...missing.values()]));
-      const results = request.then(({ tokens, vocabulary }) => {
-        if (tokens.length !== keys.length) {
+      const missingKeys = [...missing.keys()];
+      const stateGeneration = this.stateGeneration;
+      const result = Promise.resolve().then(() => loader([...missing.values()]));
+      const contents = result.then(({ tokens, vocabulary }) => {
+        if (tokens.length !== missingKeys.length) {
           throw new Error('Unexpected paragraph count in Jiten response');
         }
-
-        const words = new Map(vocabulary.map((word) => [this.wordKey(word), word]));
-        const paragraphs = tokens.map((group) => {
-          const used = [...new Set(group.map((token) => this.wordKey(token)))];
-          const vocabulary = used.map((key) => {
+        const words = new Map(vocabulary.map((word) => [vocabularyKey(word), word]));
+        const paragraphs = tokens.map((group) => ({
+          tokens: group,
+          vocabulary: [...new Set(group.map(vocabularyKey))].map((key) => {
             const word = words.get(key);
 
             if (!word) {
               throw new Error('Missing vocabulary in Jiten response');
             }
+            const { knownState, studyDeckIds, ...definition } = word;
 
-            return word;
-          });
+            if (stateGeneration === this.stateGeneration) {
+              this.setState(stateScope, word, { knownState, studyDeckIds: studyDeckIds ?? [] });
+            }
 
-          return { tokens: group, vocabulary };
-        });
+            return definition;
+          }),
+        }));
 
         if (generation === this.generation) {
-          keys.forEach((key, i) => {
-            this.entries.set(key, { value: paragraphs[i], expiresAt: this.now() + TTL_MS });
+          const changed = new Map<string, ParagraphContent>();
+
+          missingKeys.forEach((key, i) => {
+            this.remember(key, paragraphs[i]);
+            changed.set(key, paragraphs[i]);
           });
-          this.prune();
-          this.persist();
+          this.persist(changed);
         }
 
         return paragraphs;
       });
 
-      keys.forEach((key, i) => {
-        const promise = results.then((paragraphs) => paragraphs[i]);
+      missingKeys.forEach((key, i) => {
+        const promise = contents.then((paragraphs) => paragraphs[i]);
 
         this.pending.set(key, promise);
-        // Both success and failure release the pending slot. Failures are never cached.
         void promise.then(
           () => this.release(key, promise),
           () => this.release(key, promise),
         );
       });
     }
-
     const paragraphs = await Promise.all(
       waiting.map((value) => (typeof value === 'string' ? this.pending.get(value)! : value)),
     );
-    const vocabulary = new Map<string, JitenRawVocabulary>();
+    const definitions = new Map(
+      paragraphs.flatMap((p) => p.vocabulary.map((word) => [vocabularyKey(word), word] as const)),
+    );
 
-    for (const paragraph of paragraphs) {
-      paragraph.vocabulary.forEach((word) => vocabulary.set(this.wordKey(word), word));
+    if (options) {
+      await this.refreshStates(stateScope, [...definitions.values()], options.refreshStates);
+    }
+    const vocabulary: JitenRawVocabulary[] = [...definitions].map(([key, definition]) => {
+      const state = this.states.get(JSON.stringify([stateScope, key]));
+
+      return {
+        ...definition,
+        knownState: state?.knownState ?? [0],
+        studyDeckIds: state?.studyDeckIds ?? [],
+      };
+    });
+
+    return structuredClone({ tokens: paragraphs.map((p) => p.tokens), vocabulary });
+  }
+
+  private setState(scope: string, word: WordReference, value: VocabularyState): void {
+    const key = JSON.stringify([scope, vocabularyKey(word)]);
+
+    this.states.delete(key);
+    this.states.set(key, { ...structuredClone(value), updatedAt: this.now() });
+
+    if (this.states.size > 20_000) {
+      const [oldest] = this.states.keys();
+
+      this.states.delete(oldest);
+    }
+  }
+
+  private async refreshStates(
+    scope: string,
+    words: WordReference[],
+    loader: StateLoader,
+  ): Promise<void> {
+    const stale = words.filter((word) => {
+      const state = this.states.get(JSON.stringify([scope, vocabularyKey(word)]));
+
+      return !state || this.now() - state.updatedAt >= STATE_TTL_MS;
+    });
+
+    if (!stale.length) {
+      return;
+    }
+    const key = JSON.stringify([scope, stale.map(vocabularyKey).sort()]);
+    const existing = this.stateRequests.get(key);
+
+    if (existing) {
+      await existing;
+
+      return this.refreshStates(scope, words, loader);
+    }
+    const generation = this.stateGeneration;
+    const request = loader(stale).then((states) => {
+      if (states.length !== stale.length) {
+        throw new Error('Unexpected vocabulary state count');
+      }
+
+      if (generation === this.stateGeneration) {
+        stale.forEach((word, i) => this.setState(scope, word, states[i]));
+      }
+    });
+
+    this.stateRequests.set(key, request);
+
+    try {
+      await request;
+    } finally {
+      if (this.stateRequests.get(key) === request) {
+        this.stateRequests.delete(key);
+      }
     }
 
-    // Parser decorates tokens with cards, rubies and sentences; don't mutate cached results.
-    return structuredClone({
-      tokens: paragraphs.map((p) => p.tokens),
-      vocabulary: [...vocabulary.values()],
-    });
+    // Never overwrite a newer review/broadcast with a late lookup response.
+    if (generation !== this.stateGeneration) {
+      await this.refreshStates(scope, words, loader);
+    }
   }
 
-  private wordKey(word: { wordId: number; readingIndex: number }): string {
-    return `${word.wordId}:${word.readingIndex}`;
-  }
-
-  private release(key: string, promise: Promise<Paragraph>): void {
+  private release(key: string, promise: Promise<ParagraphContent>): void {
     if (this.pending.get(key) === promise) {
       this.pending.delete(key);
     }
   }
 
-  private initialize(): Promise<void> {
-    return (this.ready ??= (async (): Promise<void> => {
-      const generation = this.generation;
+  private remember(key: string, value: ParagraphContent): void {
+    this.bytes -= this.entries.get(key)?.bytes ?? 0;
+    this.entries.delete(key);
+    const bytes = new TextEncoder().encode(JSON.stringify([key, value])).length;
 
-      try {
-        await this.writes;
-        const snapshot = (await this.storage?.load()) as Snapshot | undefined;
+    this.entries.set(key, { value, bytes });
+    this.bytes += bytes;
 
-        if (generation !== this.generation || snapshot?.version !== 1) {
-          return;
-        }
-
-        const vocabulary = new Map(snapshot.vocabulary);
-        const entries = new Map<string, Entry>();
-
-        for (const [key, entry] of snapshot.entries) {
-          if (entry.expiresAt <= this.now()) {
-            continue;
-          }
-
-          const words = entry.words.map((key) => vocabulary.get(key));
-
-          if (words.every((word) => word !== undefined)) {
-            entries.set(key, {
-              expiresAt: entry.expiresAt,
-              value: { tokens: entry.tokens, vocabulary: words },
-            });
-          }
-        }
-
-        this.entries = entries;
-        this.prune();
-      } catch {
-        // Session storage is optional: read/quota failures must not stop online parsing.
-      }
-    })());
-  }
-
-  private snapshot(): Snapshot {
-    const vocabulary = new Map<string, JitenRawVocabulary>();
-    const entries: Snapshot['entries'] = [];
-
-    for (const [key, { value, expiresAt }] of this.entries) {
-      const scope = (JSON.parse(key) as [string, string])[0];
-      const words = value.vocabulary.map((word) => {
-        const wordKey = JSON.stringify([scope, this.wordKey(word)]);
-
-        vocabulary.set(wordKey, word);
-
-        return wordKey;
-      });
-
-      entries.push([key, { tokens: value.tokens, words, expiresAt }]);
-    }
-
-    return { version: 1, entries, vocabulary: [...vocabulary] };
-  }
-
-  private prune(): void {
-    for (const [key, entry] of this.entries) {
-      if (entry.expiresAt <= this.now()) {
-        this.entries.delete(key);
-      }
-    }
-
-    while (this.entries.size > this.maxEntries) {
+    while (this.entries.size > this.maxEntries || this.bytes > this.maxBytes) {
       const [oldest] = this.entries.keys();
 
+      this.bytes -= this.entries.get(oldest)!.bytes;
       this.entries.delete(oldest);
-    }
-
-    while (
-      this.entries.size &&
-      new TextEncoder().encode(JSON.stringify(this.snapshot())).length > this.maxBytes
-    ) {
-      // Remove an LRU chunk to avoid serializing once for every evicted paragraph.
-      const count = Math.max(1, Math.ceil(this.entries.size / 10));
-
-      for (let i = 0; i < count; i++) {
-        const [oldest] = this.entries.keys();
-
-        this.entries.delete(oldest);
-      }
     }
   }
 
-  private persist(): void {
-    const snapshot = this.snapshot();
-
+  private persist(changed: Map<string, ParagraphContent>): void {
     this.writes = this.writes
-      .then(() => this.storage?.save(snapshot))
+      .then(() => this.storage?.save(changed))
       .then(() => undefined)
       .catch(() => undefined);
   }
 }
 
-const STORAGE_KEY = 'jiten-parse-cache-v1';
-
-export const parseCache = new ParseCache({
-  load: async (): Promise<unknown> => (await chrome.storage.session.get(STORAGE_KEY))[STORAGE_KEY],
-  save: (snapshot): Promise<void> => chrome.storage.session.set({ [STORAGE_KEY]: snapshot }),
-});
+export const parseCache = new ParseCache(new IndexedDbContentStorage());

@@ -1,17 +1,73 @@
 import { displayToast } from '@shared/dom/display-toast';
 import { CONNECTION_ERROR_MESSAGES } from '@shared/jiten/connection-errors';
 import { JitenToken } from '@shared/jiten/types';
-import { ParseCommand } from '@shared/messages/background/parse.command';
+import { ParseCommand, ParsePriority } from '@shared/messages/background/parse.command';
 import { pageEvents } from '../integration/page-events';
 import { Registry } from '../integration/registry';
 import { Canceled } from '../sequence/canceled';
 import { AbortableSequence } from '../sequence/types';
 import { applyTokens } from './apply-tokens';
 import { getParagraphs } from './get-paragraphs';
-import { Paragraph, RegisterOptions } from './types';
+import { ApplyTokens, Paragraph, RegisterOptions } from './types';
 
 export class BatchController {
   private _pendingBatches = new Map<Node, AbortableSequence<JitenToken[], Paragraph>[]>();
+
+  /** Small viewport batches can finish independently of off-screen prefetch. */
+  public async parseParagraphs(
+    paragraphs: Paragraph[],
+    options: {
+      priority: ParsePriority;
+      signal: AbortSignal;
+      applyFn?: ApplyTokens;
+    },
+  ): Promise<void> {
+    if (options.signal.aborted) {
+      throw new Canceled();
+    }
+
+    const sequences = paragraphs.map((paragraph) =>
+      Registry.sequenceManager.getAbortableSequence<JitenToken[], Paragraph>(paragraph),
+    );
+    const abort = (): void => sequences.forEach((sequence) => sequence.abort());
+
+    options.signal.addEventListener('abort', abort, { once: true });
+    const applied = Promise.all(
+      sequences.map(async (sequence): Promise<void> => {
+        const tokens = await sequence.promise;
+
+        if (
+          !options.signal.aborted &&
+          sequence.data.every((fragment) => fragment.node.isConnected)
+        ) {
+          await options.applyFn?.(sequence.data, tokens);
+        }
+      }),
+    );
+
+    try {
+      await Promise.all([
+        new ParseCommand(
+          sequences.map((sequence) => [
+            sequence.sequenceId,
+            sequence.data.map((fragment) => fragment.node.data).join(''),
+          ]),
+          options.priority,
+        ).call(),
+        applied,
+      ]);
+
+      if (options.applyFn && !options.signal.aborted) {
+        pageEvents.pageParsed();
+      }
+    } catch (error) {
+      abort();
+
+      throw error;
+    } finally {
+      options.signal.removeEventListener('abort', abort);
+    }
+  }
 
   public registerNodes(nodes: (Element | Node)[], options: RegisterOptions = {}): void {
     nodes.forEach((node) => this.registerNode(node, options));
@@ -65,7 +121,7 @@ export class BatchController {
   private prepareNode(
     node: Element | Node,
     paragraphs: Paragraph[],
-    applyFn: typeof applyTokens,
+    applyFn: ApplyTokens,
     onComplete?: () => void,
   ): void {
     const batches = paragraphs.map((paragraph) =>
@@ -78,7 +134,7 @@ export class BatchController {
 
   private prepareBatches(
     node: HTMLElement | Node,
-    applyFn: typeof applyTokens,
+    applyFn: ApplyTokens,
     onComplete?: () => void,
   ): void {
     const batches = this._pendingBatches.get(node)!;
@@ -91,7 +147,7 @@ export class BatchController {
             try {
               const value = await batch.promise;
 
-              applyFn(batch.data, value);
+              await applyFn(batch.data, value);
             } catch (error) {
               if (error instanceof Canceled) {
                 return;

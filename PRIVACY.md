@@ -1,6 +1,6 @@
 # Privacy Policy for JitenReader Browser Extension
 
-Last updated: September 29, 2026
+Last updated: October 2, 2026 (personal branch)
 
 JitenReader is a browser extension that parses Japanese text on web pages using the Jiten.moe service. To provide this functionality, the extension reads Japanese text from web pages you visit and transmits it to Jiten.moe's servers for processing. All data is transmitted securely over HTTPS. This policy describes in full how user data is collected, processed, stored, and shared.
 
@@ -28,7 +28,7 @@ The extension does **not** collect browsing history, analytics, telemetry, or an
 
 - All extension settings, including your API key, are stored **locally on your device** using the browser's extension storage (`chrome.storage.local`).
 - No data is synced to the cloud by the extension.
-- Parsed word data is held in memory only for the duration of your browsing session and is not persisted.
+- Parsed paragraph text, token offsets and dictionary definitions are cached locally in IndexedDB. This personal branch retains content across browser restarts, with approximately 64 MiB of serialized data managed by LRU eviction. Vocabulary learning state is kept separately in memory and refreshed from Jiten when stale or changed. Cache namespaces use hashed server/parser and account identifiers; the content cache contains no API keys or learning states. Remove the IndexedDB database jiten-parser-content-v2 in the extension background DevTools, then reload the extension to force fresh parsing. Uninstalling the extension deletes its local data.
 - Lines in the clipboard reader are saved in the extension's local storage on your device until you delete or clear them.
 
 ## Data Sharing

@@ -2,7 +2,7 @@ import { getConfiguration } from '@shared/configuration/get-configuration';
 import { openOptionsPage } from '@shared/extension/open-options-page';
 import { MessageSender } from '@shared/extension/types';
 import { isApiTokenRejected } from '@shared/jiten/request-by-url';
-import { ParseCommand } from '@shared/messages/background/parse.command';
+import { ParseCommand, ParsePriority } from '@shared/messages/background/parse.command';
 import { ToastCommand } from '@shared/messages/foreground/toast.command';
 import { BackgroundCommandHandler } from '../lib/background-command-handler';
 import { ParseController } from './parse.controller';
@@ -27,6 +27,7 @@ export class ParseCommandHandler extends BackgroundCommandHandler<ParseCommand> 
   public async handle(
     sender: MessageSender,
     data: [sequenceId: number, text: string][],
+    priority: ParsePriority = 'visible',
   ): Promise<void> {
     const jitenApiKey = await getConfiguration('jitenApiKey');
 
@@ -43,6 +44,6 @@ export class ParseCommandHandler extends BackgroundCommandHandler<ParseCommand> 
       return;
     }
 
-    this._parseController.parseSequences(sender, data);
+    this._parseController.parseSequences(sender, data, priority);
   }
 }

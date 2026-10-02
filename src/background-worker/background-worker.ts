@@ -10,8 +10,9 @@ import { CLIPBOARD_READER_COMMAND } from '@shared/extension/clipboard-reader-tab
 import { openOptionsPage } from '@shared/extension/open-options-page';
 import { openView } from '@shared/extension/open-view';
 import { runtime } from '@shared/extension/runtime';
-import { clearRejectedApiToken } from '@shared/jiten/request-by-url';
 import { parseCache } from '@shared/jiten/parse-cache';
+import { getParseCacheContext } from '@shared/jiten/parse-cache-context';
+import { clearRejectedApiToken } from '@shared/jiten/request-by-url';
 import { OpenReaderModeCommand } from '@shared/messages/foreground/open-reader-mode.command';
 import { ParsePageCommand } from '@shared/messages/foreground/parse-page.command';
 import { ParseSelectionCommand } from '@shared/messages/foreground/parse-selection.command';
@@ -160,7 +161,7 @@ runtime.onMessage.addListener(
 );
 
 onBroadcastMessage('profileSwitched', () => {
-  parseCache.clear();
+  parseCache.invalidateStates();
   invalidateProfileCache();
   invalidateSetConfigurationCache();
   clearRejectedApiToken();
@@ -169,10 +170,34 @@ onBroadcastMessage('profileSwitched', () => {
 
 onBroadcastMessage('configurationUpdated', () => {
   clearRejectedApiToken();
-  parseCache.clear();
+  parseCache.invalidateStates();
 });
 
-onBroadcastMessage('cardStateUpdated', () => parseCache.clear());
+onBroadcastMessage(
+  'cardStateUpdated',
+  async (wordId, readingIndex, states, deckIds): Promise<void> => {
+    const { stateScope } = await getParseCacheContext();
+    const stateNames = [
+      'new',
+      'young',
+      'mature',
+      'blacklisted',
+      'due',
+      'mastered',
+      'redundant',
+      'suspended',
+    ];
+
+    parseCache.updateState(
+      stateScope,
+      { wordId, readingIndex },
+      {
+        knownState: states.map((state) => stateNames.indexOf(state)).filter((state) => state >= 0),
+        studyDeckIds: deckIds ?? [],
+      },
+    );
+  },
+);
 
 async function migrateWordStyleConfig(): Promise<void> {
   const existing = await getConfiguration('wordStyleConfig');

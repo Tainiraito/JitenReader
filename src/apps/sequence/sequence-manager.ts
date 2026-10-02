@@ -42,7 +42,10 @@ export class SequenceManager {
     const promise = new Promise<R>((resolve, reject) => {
       abortController.signal.addEventListener(
         'abort',
-        () => new AbortRequestCommand(sequenceId).send(),
+        () => {
+          this.handleBackgroundMessage(sequenceId, (request) => request.reject(new Canceled()));
+          new AbortRequestCommand(sequenceId).send();
+        },
         { once: true },
       );
       this._requests.set(sequenceId, { resolve, reject });

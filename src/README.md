@@ -22,4 +22,4 @@ npm run pack firefox
 
 ## Personal parse-cache branch
 
-The personal/parse-cache branch adds paragraph-level parsing cache with browser-session persistence, 30-minute expiry, bounded LRU eviction, concurrent request deduplication, and invalidation for vocabulary changes. Run npm run test:parse-cache to validate the cache. See the root README for installation, limits, and the known upstream typecheck failures.
+This branch separates stable tokenization/definitions from mutable vocabulary state. Content persists in normalized IndexedDB with approximately 64 MiB LRU capacity, without fixed time expiry; state is account-scoped and refreshed through lightweight lookups after five minutes or relevant changes. Ttsu prioritizes visible paragraphs, applies small batches incrementally, and prefetches nearby mounted text during idle time. Run npm run test:parse-cache. See the root README and LONG-TEXT-VALIDATION.md for limits, validation scope and the upstream typecheck failures.

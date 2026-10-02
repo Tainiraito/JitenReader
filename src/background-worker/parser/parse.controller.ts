@@ -1,6 +1,7 @@
 import { MessageSender } from '@shared/extension/types';
 import { RateLimitedError } from '@shared/jiten/rate-limited-error';
 import { JitenToken } from '@shared/jiten/types';
+import { ParsePriority } from '@shared/messages/background/parse.command';
 import { SequenceAbortedCommand } from '@shared/messages/foreground/sequence-aborted.command';
 import { SequenceErrorCommand } from '@shared/messages/foreground/sequence-error.command';
 import { SequenceSuccessCommand } from '@shared/messages/foreground/sequence-success.command';
@@ -9,8 +10,10 @@ import { ForegroundCommand } from '@shared/messages/lib/foreground-command';
 import { Parser } from './parser';
 import { Batch, Handle } from './parser.types';
 
-// UTF-8 bytes: a deliberate ~3x overestimate for Japanese against the server's 81,000 character cap.
-const BATCH_SIZE = 80000;
+// Small UTF-8 batches render visible text before downloading the rest of a long chapter.
+const BATCH_SIZE = 3000;
+const MAX_PARAGRAPHS = 12;
+const PREFETCH_BATCH_SIZE = 600;
 // Measured from request start, so batches slower than this to parse are not delayed further.
 const MIN_DISPATCH_INTERVAL_MS = 1000;
 // A longer pause risks the service worker being suspended while paragraphs are still queued.
@@ -27,8 +30,15 @@ export class ParseController {
     this._pending.delete(this.getKey(sender, sequenceId));
   }
 
-  public parseSequences(sender: MessageSender, data: [sequenceId: number, text: string][]): void {
-    const handles = data.map(([sequenceId, text]) => this.createHandle(sender, sequenceId, text));
+  public parseSequences(
+    sender: MessageSender,
+    data: [sequenceId: number, text: string][],
+    priority: ParsePriority = 'visible',
+  ): void {
+    const handles = data.map(([sequenceId, text]) => ({
+      ...this.createHandle(sender, sequenceId, text),
+      priority,
+    }));
 
     if (this.getPauseRemaining() > MAX_PAUSE_MS) {
       this.cancel(handles);
@@ -79,7 +89,11 @@ export class ParseController {
     this._nextDispatchAt = Date.now() + MIN_DISPATCH_INTERVAL_MS;
 
     try {
-      await new Parser(batch).parse();
+      const requestedNetwork = await new Parser(batch).parse();
+
+      if (!requestedNetwork) {
+        this._nextDispatchAt = Date.now();
+      }
     } catch (error) {
       if (error instanceof RateLimitedError) {
         this.pause(batch, error.retryAfterMs);
@@ -96,8 +110,20 @@ export class ParseController {
     const batch: Batch = { strings: [], handles: [] };
     let length = 0;
 
-    for (const [key, handle] of this._pending) {
-      if (batch.handles.length && length + handle.length > BATCH_SIZE) {
+    const rank = { visible: 0, nearby: 1, background: 2 };
+    const pending = [...this._pending].sort(
+      ([, a], [, b]) => rank[a.priority ?? 'visible'] - rank[b.priority ?? 'visible'],
+    );
+    const priority = pending[0]?.[1].priority ?? 'visible';
+    const size = priority === 'background' ? PREFETCH_BATCH_SIZE : BATCH_SIZE;
+
+    for (const [key, handle] of pending) {
+      if (
+        batch.handles.length &&
+        (length + handle.length > size ||
+          batch.handles.length >= MAX_PARAGRAPHS ||
+          (handle.priority ?? 'visible') !== priority)
+      ) {
         break;
       }
 

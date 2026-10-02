@@ -6,9 +6,15 @@ import { getPitchClass } from './pitch-accent-utils';
 export class Parser {
   constructor(private batch: Batch) {}
 
-  public async parse(): Promise<void> {
+  public async parse(): Promise<boolean> {
     const paragraphs = this.batch.strings;
-    const { tokens, vocabulary } = await parse(paragraphs, { failFastOnRateLimit: true });
+    let requestedNetwork = false;
+    const { tokens, vocabulary } = await parse(paragraphs, {
+      failFastOnRateLimit: true,
+      onNetworkRequest: () => {
+        requestedNetwork = true;
+      },
+    });
 
     const cards = this.vocabToCard(vocabulary);
     const parsedTokens = this.parseTokens(tokens, cards, vocabulary);
@@ -18,6 +24,8 @@ export class Parser {
     for (const [i, handle] of this.batch.handles.entries()) {
       handle.resolve(parsedTokens[i]);
     }
+
+    return requestedNetwork;
   }
 
   private extractRubiesFromAnnotated(input: string): JitenRuby[] {

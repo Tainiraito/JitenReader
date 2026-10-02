@@ -1,14 +1,16 @@
+import { displayToast } from '@shared/dom/display-toast';
 import { JitenToken } from '@shared/jiten/types';
 import { Fragment, Paragraph } from '../../batches/types';
 import { Registry } from '../../integration/registry';
 import { TtsuParagraphReader } from '../../paragraph-reader/ttsu.paragraph-reader';
 import { AutomaticParser } from '../automatic.parser';
+import { TtsuParseScheduler } from './ttsu-parse-scheduler';
 import { TtsuTextHighlighter } from './ttsu-text-highlighter';
 
 let statsUpdateTimeout: number | undefined;
 
-const ttsuApplyTokens = (fragments: Fragment[], tokens: JitenToken[]): void => {
-  new TtsuTextHighlighter(fragments, tokens).apply();
+const ttsuApplyTokens = async (fragments: Fragment[], tokens: JitenToken[]): Promise<void> => {
+  await new TtsuTextHighlighter(fragments, tokens).applyAndWait();
 
   if (statsUpdateTimeout) {
     clearTimeout(statsUpdateTimeout);
@@ -33,8 +35,10 @@ export class TtsuParser extends AutomaticParser {
 
   private static readonly MIN_FURIGANA_LINE_HEIGHT = 1.65;
   private _hasReservedFuriganaSpace = false;
+  private _scheduler?: TtsuParseScheduler;
 
   public override destroy(): void {
+    this._scheduler?.stop();
     this._pageObserver?.disconnect();
     this._chapterObserver?.disconnect();
     super.destroy();
@@ -46,30 +50,39 @@ export class TtsuParser extends AutomaticParser {
 
   protected visibleObserverOnEnter(elements: HTMLElement[]): void {
     const [element] = elements;
-    const container = element.querySelector('.book-content-container');
-    const chapters = element.querySelectorAll('[id^="ttu');
+    const container = element.querySelector<HTMLElement>('.book-content-container') ?? element;
 
-    if (container) {
-      this._pageObserver = new MutationObserver(() => {
-        Registry.sentenceManager.reset();
-
-        this.parseNode(container);
-      });
-
-      this._pageObserver.observe(container, {
-        attributes: true,
-        attributeFilter: ['id'],
-      });
-
-      return;
-    }
-
-    this.setupChapterObservers(chapters);
+    this.installAppStyles();
+    this.reserveFuriganaSpace();
+    Registry.sentenceManager.reset();
+    this._pageObserver?.disconnect();
+    this._pageObserver = new MutationObserver(() => Registry.sentenceManager.reset());
+    this._pageObserver.observe(container, { attributes: true, attributeFilter: ['id'] });
+    this._scheduler ??= new TtsuParseScheduler(
+      (root) => getTtsuParagraphs(root, this.filter, this._meta.collapseWhitespace),
+      async (paragraphs, priority, signal): Promise<void> => {
+        await Registry.batchController.parseParagraphs(paragraphs, {
+          priority,
+          signal,
+          applyFn: priority === 'visible' ? ttsuApplyTokens : undefined,
+        });
+      },
+      (error) => displayToast('error', 'An error occurred while parsing the text', error.message),
+      () => window.dispatchEvent(new Event('resize')),
+    );
+    this._scheduler.start(container, element);
   }
 
   protected visibleObserverOnExit(): void {
+    this._scheduler?.stop();
     this._pageObserver?.disconnect();
     this._chapterObserver?.disconnect();
+  }
+
+  protected override disconnectObservers(): void {
+    this._scheduler?.stop();
+    this._pageObserver?.disconnect();
+    super.disconnectObservers();
   }
 
   protected override parseNodes(
