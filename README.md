@@ -1,6 +1,8 @@
 ## 个人综合版本：可配置超时与长文解析优化
 
-当前自用来源分支：personal/all-in-one，合并 personal/parse-cache 与 feature/configurable-api-timeout。原分支及上游 v1.4.0（388f5fe5ae9e2d8b8b090fa9c64c2ea1e9104a6d）保留。默认 hidePopupAutomatically=false、skipFurigana=true；API 超时默认 60 秒，可在 Jiten Integration → API Request Timeout (seconds) 调整为 1–300 秒整数，按配置档保存。浏览器已保存的设置优先；新增超时设置缺省使用 60 秒，不覆盖 API Key 或已有设置。上游贡献预备分支仍独立保持 10 秒默认值。
+当前自用来源分支：personal/all-in-one，合并 personal/parse-cache 与 feature/configurable-api-timeout。原分支及上游 v1.4.0（388f5fe5ae9e2d8b8b090fa9c64c2ea1e9104a6d）保留。默认 hidePopupAutomatically=false、skipFurigana=true；API 超时默认 60 秒，可在 Jiten Integration → API Request Timeout (seconds) 调整为 1–300 秒整数，按配置档保存。浏览器已保存的设置优先；新增超时设置缺省使用 60 秒，不覆盖 API Key 或已有设置。上游贡献分支仍独立保持 10 秒默认值。
+
+本地仓库：D:\Documents\Github\JitenReader；Chrome 构建目录：D:\Documents\Github\JitenReader\jiten.reader。个人源码发布到 [Tainiraito/JitenReader](https://github.com/Tainiraito/JitenReader) 的 personal/* 分支；构建产物及 node_modules 仅保留本地。独立贡献工作目录位于 D:\Documents\Github\JitenReader-configurable-timeout。旧安装目录仅保留 jiten.reader 的兼容链接，现有 Chrome 安装可继续重新加载。
 
 ### 长文缓存与调度
 
@@ -25,7 +27,7 @@ Ttsu 空白预处理保持幂等，高亮渲染完成后再确认该批次完成
 
 npm run test:parse-cache：22 项测试通过，包括状态 TTL、定向失效、广播竞态、账户隔离、持久化恢复、并发去重、可见批次优先和取消旧请求。另有 4 项 API 超时测试（scripts/api-timeout.test.cjs），验证个人默认 60 秒、动态配置读取、响应正文超时及实际秒数错误提示；26 项合并运行全部通过。改动文件 ESLint 通过，Chrome 构建成功。全仓 TypeScript 检查仍有上游已有错误，与 TYPECHECK-UPSTREAM.txt 对照未新增错误。
 
-综合版设置页使用实际构建产物在隔离 Chrome 中验证：60 秒默认值、关闭弹窗自动隐藏、开启禁生成注音、修改超时并刷新保留、非法值拒绝及配置档隔离均通过。桌面及 390px 手机宽度布局正常，没有页面脚本错误。此验证模拟扩展存储和消息接口，不调用线上 API；记录位于 ../验证/综合自用版。
+综合版设置页使用实际构建产物在隔离 Chrome 中验证：60 秒默认值、关闭弹窗自动隐藏、开启禁生成注音、修改超时并刷新保留、非法值拒绝及配置档隔离均通过。桌面及 390px 手机宽度布局正常，没有页面脚本错误。此验证模拟扩展存储和消息接口，不调用线上 API；记录位于 ../JitenReader-validation/综合自用版。
 
 独立 Chrome 的 Ttsu 布局测试使用真实段落读取、高亮、调度及 IndexedDB 实现，API 返回模拟数据：横排/竖排翻页、1→2→1 缓存复用、浏览器重启恢复、词典去重及磁盘 LRU 均通过，无页面脚本错误。测试没有调用用户账户或线上 Jiten API；用户真实书籍与网络环境仍待验收。详情见 LONG-TEXT-VALIDATION.md。
 

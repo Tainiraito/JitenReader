@@ -2,7 +2,7 @@
 
 Date: 2026-10-02. Baseline: upstream v1.4.0 and the existing personal timeout/defaults branch.
 
-The personal/all-in-one branch retains the validated personal/parse-cache implementation and merges the configurable API timeout feature. The personal default remains 60 seconds, adjustable per profile from 1 to 300 seconds. All 22 cache tests and 4 timeout tests pass together. The built settings page also passes isolated Chrome checks for personal defaults, persistence, validation and profile isolation; evidence is in ../验证/综合自用版. Storage/runtime are simulated and no live API is called. The separate upstream contribution branch retains its 10-second default.
+The personal/all-in-one branch retains the validated personal/parse-cache implementation and merges the configurable API timeout feature. The personal default remains 60 seconds, adjustable per profile from 1 to 300 seconds. All 22 cache tests and 4 timeout tests pass together. The built settings page also passes isolated Chrome checks for personal defaults, persistence, validation and profile isolation; evidence is in ../JitenReader-validation/综合自用版. Storage/runtime are simulated and no live API is called. The separate upstream contribution branch retains its 10-second default.
 
 ## Regression checks
 
@@ -26,7 +26,7 @@ An isolated, headless installed Chrome profile runs a local Ttsu-style fixture. 
 | Disk limit forced to 3500 bytes | LRU retains 6 paragraphs / 3241 estimated bytes, with correct dictionary references |
 | Errors | No fixture page errors or scheduler errors |
 
-Local harness, reports and screenshots are grouped in `../验证/`, outside the source tree. Screenshots are checked for visible content and unexpected overlays. Background prefetch does not apply highlighting until text becomes visible.
+Local harness, reports and screenshots are grouped in `../JitenReader-validation/`, outside the source tree. Screenshots are checked for visible content and unexpected overlays. Background prefetch does not apply highlighting until text becomes visible.
 
 ## User acceptance remaining
 
