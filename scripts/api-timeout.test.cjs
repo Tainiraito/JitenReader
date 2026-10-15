@@ -24,87 +24,138 @@ function loadTs(file, mocks = {}) {
   return module.exports;
 }
 
-const { getApiRequestTimeoutMs, isValidApiRequestTimeout } = loadTs(
-  'src/shared/jiten/api-request-timeout.ts',
-);
-
-test('valid timeout boundaries and user-selected values use seconds', () => {
-  for (const seconds of [1, 10, 60, 120, 300]) {
-    assert.equal(isValidApiRequestTimeout(seconds), true);
-    assert.equal(getApiRequestTimeoutMs(seconds), seconds * 1000);
-  }
-});
-
-test('missing, invalid and corrupted values retain the personal sixty-second default', () => {
-  for (const value of [undefined, null, '', '60', true, 0, -1, 301, 1.5, NaN, Infinity]) {
-    assert.equal(isValidApiRequestTimeout(value), false);
-    assert.equal(getApiRequestTimeoutMs(value), 60_000);
-  }
-});
-
-test('real requests read the active timeout for each call, including explicit API tokens', async () => {
-  let setting = 60;
-  const durations = [];
-  const originalFetch = global.fetch;
-  const originalTimeout = AbortSignal.timeout;
+const flush = async () => {
+  for (let i = 0; i < 30; i++) await Promise.resolve();
+};
+function harness(t, implementation) {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const original = global.fetch;
+  let calls = 0;
+  global.fetch = (url, options) => implementation(options.signal, ++calls);
+  t.after(() => {
+    global.fetch = original;
+    t.mock.timers.reset();
+  });
   const { requestByUrl } = loadTs('src/shared/jiten/request-by-url.ts', {
-    '../configuration/get-configuration': {
-      getConfiguration: async (key) => (key === 'jitenApiTimeout' ? setting : 'test-key'),
-    },
+    '../configuration/get-configuration': { getConfiguration: async () => 'private-key' },
     '../dom/display-toast': { displayToast() {} },
     './parse-cache': { parseCache: { invalidateStates() {} } },
   });
-  AbortSignal.timeout = (ms) => {
-    durations.push(ms);
-    return new AbortController().signal;
+  const run = () =>
+    requestByUrl('https://example.test/api', 'reader/parse', { text: ['private text'] });
+  const tick = async (ms) => {
+    t.mock.timers.tick(ms);
+    await flush();
   };
-  global.fetch = async (_url, options) => {
-    assert.ok(options.signal instanceof AbortSignal);
-    return { ok: true, status: 200, json: async () => ({ result: [] }) };
-  };
-  try {
-    await requestByUrl('https://example.test/api', 'reader/parse', { text: ['先生'] });
-    setting = 120;
-    await requestByUrl('https://example.test/api', 'reader/ping', undefined, {
-      apiToken: 'explicit',
-    });
-    setting = NaN;
-    await requestByUrl('https://example.test/api', 'reader/ping');
-    assert.deepEqual(durations, [60_000, 120_000, 60_000]);
-  } finally {
-    global.fetch = originalFetch;
-    AbortSignal.timeout = originalTimeout;
-  }
-});
-
-test('the request signal remains active while the response body is downloaded', async () => {
-  const controller = new AbortController();
-  const originalFetch = global.fetch;
-  const originalTimeout = AbortSignal.timeout;
-  const { requestByUrl } = loadTs('src/shared/jiten/request-by-url.ts', {
-    '../configuration/get-configuration': {
-      getConfiguration: async (key) => (key === 'jitenApiTimeout' ? 120 : 'test-key'),
-    },
-    '../dom/display-toast': { displayToast() {} },
-    './parse-cache': { parseCache: { invalidateStates() {} } },
-  });
-  AbortSignal.timeout = () => controller.signal;
-  global.fetch = async (_url, options) => ({
+  return { run, tick, calls: () => calls };
+}
+function body(signal, delays) {
+  let index = 0;
+  return {
     ok: true,
     status: 200,
-    json: () =>
-      new Promise((_resolve, reject) => {
-        options.signal.addEventListener('abort', () => reject(options.signal.reason));
-        controller.abort(new DOMException('timed out', 'TimeoutError'));
+    body: {
+      getReader: () => ({
+        read: () =>
+          new Promise((resolve, reject) => {
+            if (signal.aborted) return reject(signal.reason);
+            const abort = () => reject(signal.reason);
+            signal.addEventListener('abort', abort, { once: true });
+            const finish = () => {
+              signal.removeEventListener('abort', abort);
+              resolve(
+                index++ < delays.length
+                  ? { done: false, value: new TextEncoder().encode(' ') }
+                  : { done: true },
+              );
+            };
+            if (index < delays.length) setTimeout(finish, delays[index]);
+            else finish();
+          }),
       }),
+    },
+  };
+}
+// A whitespace body is supplemented with valid JSON in the successful cases.
+function download(signal, delays) {
+  const response = body(signal, delays);
+  const reader = response.body.getReader();
+  let sent = false;
+  response.body.getReader = () => ({
+    read: async () => {
+      const chunk = await reader.read();
+      if (chunk.done && !sent) {
+        sent = true;
+        return { done: false, value: new TextEncoder().encode('{}') };
+      }
+      return chunk;
+    },
   });
-  try {
-    await assert.rejects(
-      requestByUrl('https://example.test/api', 'reader/parse', { text: ['先生'] }),
-      /timed out after 120s \(reader\/parse; reading response body\)/,
-    );
-  } finally {
-    global.fetch = originalFetch;
-    AbortSignal.timeout = originalTimeout;
+  return response;
+}
+test('response headers abort after 10 seconds with at most three attempts', async (t) => {
+  const h = harness(
+    t,
+    (signal) =>
+      new Promise((_, reject) =>
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true }),
+      ),
+  );
+  const result = assert.rejects(h.run(), /10s.*waiting for response headers/);
+  await flush();
+  for (let i = 0; i < 3; i++) {
+    await h.tick(10000);
+    if (i < 2) await h.tick(2000);
   }
+  await result;
+  assert.equal(h.calls(), 3);
+});
+test('progressing downloads exceed 10 seconds and reset the 15-second stall timer', async (t) => {
+  const h = harness(t, (signal) => download(signal, [14000, 14000, 14000]));
+  let done = false;
+  const result = h.run().then((v) => {
+    done = true;
+    return v;
+  });
+  await flush();
+  await h.tick(14000);
+  assert.equal(done, false);
+  await h.tick(14000);
+  assert.equal(done, false);
+  await h.tick(14000);
+  assert.deepEqual(await result, {});
+  assert.equal(h.calls(), 1);
+  await h.tick(300000);
+  assert.equal(h.calls(), 1);
+});
+test('a stalled download retries once and the replacement succeeds', async (t) => {
+  const h = harness(t, (signal, n) => download(signal, n === 1 ? [20000] : []));
+  const result = h.run();
+  await flush();
+  await h.tick(15000);
+  await h.tick(2000);
+  assert.deepEqual(await result, {});
+  assert.equal(h.calls(), 2);
+});
+test('repeated download stalls stop after two attempts with a stage-specific error', async (t) => {
+  const h = harness(t, (signal) => download(signal, [20000]));
+  const result = assert.rejects(h.run(), (e) => {
+    assert.match(e.message, /stalled for 15s.*reading response body/);
+    assert.ok(!e.message.includes('private'));
+    return true;
+  });
+  await flush();
+  await h.tick(15000);
+  await h.tick(2000);
+  await h.tick(15000);
+  await result;
+  assert.equal(h.calls(), 2);
+});
+test('continuously progressing downloads hit the 300-second cap without retrying', async (t) => {
+  const h = harness(t, (signal) => download(signal, Array(40).fill(10000)));
+  const result = assert.rejects(h.run(), /300s.*reading response body/);
+  await flush();
+  for (let i = 0; i < 30; i++) await h.tick(10000);
+  await result;
+  assert.equal(h.calls(), 1);
 });

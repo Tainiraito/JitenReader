@@ -1,6 +1,6 @@
-## 个人综合版本：可配置超时与长文解析优化
+## 个人综合版本：上游 1.4.1 与长文解析优化
 
-当前自用来源分支：personal/all-in-one，合并 personal/parse-cache 与 feature/configurable-api-timeout。原分支及上游 v1.4.0（388f5fe5ae9e2d8b8b090fa9c64c2ea1e9104a6d）保留。默认 hidePopupAutomatically=false、skipFurigana=true；API 超时默认 60 秒，可在 Jiten Integration → API Request Timeout (seconds) 调整为 1–300 秒整数，按配置档保存。浏览器已保存的设置优先；新增超时设置缺省使用 60 秒，不覆盖 API Key 或已有设置。上游贡献分支仍独立保持 10 秒默认值。
+当前自用来源分支：personal/all-in-one，已同步上游 dev 的 5d5d9cb（1.4.1，2026-10-15）。保留 hidePopupAutomatically=false、skipFurigana=true、个人显示名称及缓存/长文调度优化。API 请求采用上游分阶段超时：等待响应头 10 秒、下载停滞 15 秒、下载总上限 300 秒；每次收到数据都会重置停滞计时，停滞最多额外重试一次，整体最多三次尝试。原超时输入框已移除，旧 jitenApiTimeout 配置忽略，不覆盖 API Key 或其他已保存设置。贡献分支及已有 PR 不变。
 
 本地仓库：D:\Documents\Github\JitenReader；Chrome 构建目录：D:\Documents\Github\JitenReader\jiten.reader。个人源码发布到 [Tainiraito/JitenReader](https://github.com/Tainiraito/JitenReader) 的 personal/* 分支；构建产物及 node_modules 仅保留本地。独立贡献工作目录位于 D:\Documents\Github\JitenReader-configurable-timeout。旧安装目录仅保留 jiten.reader 的兼容链接，现有 Chrome 安装可继续重新加载。
 
@@ -21,13 +21,13 @@ Ttsu 空白预处理保持幂等，高亮渲染完成后再确认该批次完成
 
 重新加载扩展后，已打开页面中的旧 content script 会失效，可能记录 Extension context invalidated；随后刷新全部已打开的 Ttsu 阅读页。Chrome 的扩展错误列表会保留历史记录，可点击“全部清除”后重新测试；清除错误记录不会删除解析缓存。
 
-停止语音播放现在先检查 offscreen 播放页面，缺少接收方时直接结束，并处理页面关闭竞态，避免未捕获的消息拒绝。截图中无调用栈的 Receiving end does not exist 不足以确认唯一来源，此修复覆盖代码中确认的一处缺口。解析响应头等待与响应体下载超时包含接口名、本次实际配置的秒数和阶段；超时仍可能由网络或服务处理引起，需结合新错误和 Network Timing 判断。
+停止语音播放现在先检查 offscreen 播放页面，缺少接收方时直接结束，并处理页面关闭竞态，避免未捕获的消息拒绝。截图中无调用栈的 Receiving end does not exist 不足以确认唯一来源，此修复覆盖代码中确认的一处缺口。解析响应头等待与响应体下载超时包含接口名、对应阶段的固定秒数和阶段；超时仍可能由网络或服务处理引起，需结合新错误和 Network Timing 判断。
 
 ### 验证与试用
 
-npm run test:parse-cache：22 项测试通过，包括状态 TTL、定向失效、广播竞态、账户隔离、持久化恢复、并发去重、可见批次优先和取消旧请求。另有 4 项 API 超时测试（scripts/api-timeout.test.cjs），验证个人默认 60 秒、动态配置读取、响应正文超时及实际秒数错误提示；26 项合并运行全部通过。改动文件 ESLint 通过，Chrome 构建成功。全仓 TypeScript 检查仍有上游已有错误，与 TYPECHECK-UPSTREAM.txt 对照未新增错误。
+node --test --test-isolation=none scripts/parse-cache.test.cjs scripts/api-timeout.test.cjs：28 项全部通过，包括原缓存覆盖、上游注音与缓存组合以及五项分阶段超时测试。全仓 ESLint 通过，Chrome 构建成功。完整 TypeScript 检查为 20 项既有诊断，最新上游为 23 项，对比无新增；TYPECHECK-UPSTREAM.txt 已更新到本次上游基线。
 
-综合版设置页使用实际构建产物在隔离 Chrome 中验证：60 秒默认值、关闭弹窗自动隐藏、开启禁生成注音、修改超时并刷新保留、非法值拒绝及配置档隔离均通过。桌面及 390px 手机宽度布局正常，没有页面脚本错误。此验证模拟扩展存储和消息接口，不调用线上 API；记录位于 ../JitenReader-validation/综合自用版。
+综合版设置页使用实际构建产物在隔离 Chrome 中验证：超时输入框移除、个人默认值保留、已保存 API Key 与显示设置保持、旧超时值无影响，以及桌面/390px 手机布局均通过，无相关页面错误。实际 TtsuParser、段落读取、高亮、调度和 IndexedDB 组合验证了同一容器 ID 的 TXT 内容替换、章节返回、横竖排翻页、浏览器重启缓存恢复和磁盘 LRU。扩展接口及 API 使用模拟数据；记录位于 ../JitenReader-validation/上游同步-2026-10-15。
 
 独立 Chrome 的 Ttsu 布局测试使用真实段落读取、高亮、调度及 IndexedDB 实现，API 返回模拟数据：横排/竖排翻页、1→2→1 缓存复用、浏览器重启恢复、词典去重及磁盘 LRU 均通过，无页面脚本错误。测试没有调用用户账户或线上 Jiten API；用户真实书籍与网络环境仍待验收。详情见 LONG-TEXT-VALIDATION.md。
 
@@ -143,7 +143,7 @@ Upon installation, the settings page will open. You can also find it by clicking
 Here you will need to enter your Jiten API key. It can be found at the very bottom of the [Jiten settings page](https://jiten.moe/settings).  
 You can also change various hotkeys.
 
-In **Jiten Integration**, **API Request Timeout (seconds)** controls the maximum time for each Jiten API request, including downloading the response. This personal build defaults to 60 seconds; set a whole number from 1 to 300 seconds for slower connections or larger parsing responses. This setting is saved per profile and applies to subsequent requests; existing requests retain their original timeout. Each retry has its own timeout. It does not change the separate audio playback timeout.
+Jiten API requests use upstream timeouts: 10 seconds until response headers, 15 seconds without download progress, and a 300-second overall body download cap. Progress resets the stall timer; a stalled download can retry once within the three-attempt limit. The former personal timeout setting has been removed; stored values are ignored. Audio playback retains its separate timeout.
 
 ## Usage
 

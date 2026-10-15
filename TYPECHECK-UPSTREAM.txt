@@ -1,3 +1,4 @@
+Upstream dev 5d5d9cb (1.4.1), Node v24.19.0; npm run typecheck, 2026-10-15
 src/apps/ajb.ts(59,26): error TS2345: Argument of type '"toggleStatusBarKey"' is not assignable to parameter of type '"keydown" | "keyup" | keyof KeybindEvents | "parseKeyReleased" | "showPopupKeyReleased" | "showAdvancedDialogKeyReleased" | "lookupSelectionKeyReleased" | ... 16 more ... | "jitenRotateBackwardReleased"'.
 src/apps/ajb.ts(68,7): error TS2345: Argument of type '(wordId: number, readingIndex: number, state: JitenCardState[], deckIds: number[]) => void' is not assignable to parameter of type 'BroadcastEventFunction<"cardStateUpdated">'.
   Target signature provides too few arguments. Expected 4 or more, but got 3.
@@ -11,7 +12,7 @@ src/apps/popup/actions/mining-actions.ts(119,17): error TS2345: Argument of type
 src/apps/popup/actions/mining-actions.ts(121,17): error TS2345: Argument of type 'JitenCardState.MASTERED' is not assignable to parameter of type 'JitenCardState.NEW | JitenCardState.YOUNG | JitenCardState.MATURE | JitenCardState.DUE | JitenCardState.REDUNDANT | JitenCardState.SUSPENDED'.
 src/apps/text-highlighter/text-highlighter.ts(989,22): error TS2339: Property 'token' does not exist on type 'never'.
 src/background-worker/background-worker.ts(161,20): error TS2345: Argument of type '"profileSwitched"' is not assignable to parameter of type 'keyof BroadcastEvents'.
-src/background-worker/parser/parser.ts(73,5): error TS2322: Type '{ wordId: number; readingIndex: number; spelling: string; reading: string; frequencyRank: number; partsOfSpeech: string[]; meanings: { glosses: string[]; partsOfSpeech: string[]; }[]; cardState: string[]; pitchAccents: number[]; wordWithReading: null; deckIds: number[]; }[]' is not assignable to type 'JitenCard[]'.
+src/background-worker/parser/parser.ts(167,5): error TS2322: Type '{ wordId: number; readingIndex: number; spelling: string; reading: string; frequencyRank: number; partsOfSpeech: string[]; meanings: { glosses: string[]; partsOfSpeech: string[]; }[]; cardState: string[]; pitchAccents: number[]; wordWithReading: null; deckIds: number[]; }[]' is not assignable to type 'JitenCard[]'.
   Type '{ wordId: number; readingIndex: number; spelling: string; reading: string; frequencyRank: number; partsOfSpeech: string[]; meanings: { glosses: string[]; partsOfSpeech: string[]; }[]; cardState: string[]; pitchAccents: number[]; wordWithReading: null; deckIds: number[]; }' is not assignable to type 'JitenCard'.
     Types of property 'cardState' are incompatible.
       Type 'string[]' is not assignable to type 'JitenCardState[]'.
@@ -20,6 +21,14 @@ src/shared/configuration/profiles-state.ts(29,31): error TS2345: Argument of typ
 src/shared/extension/get-parsing-paused.ts(4,3): error TS2322: Type '{}' is not assignable to type 'boolean'.
 src/shared/jiten/add-example-sentence.ts(12,92): error TS2345: Argument of type '{ text: string; source: string | undefined; }' is not assignable to parameter of type 'undefined'.
 src/shared/jiten/add-to-study-deck.ts(13,75): error TS2345: Argument of type '{ wordId: number; readingIndex: number; occurrences: number; sentence: string | undefined; source: string | undefined; }' is not assignable to parameter of type 'undefined'.
+src/shared/jiten/request-by-url.ts(85,19): error TS2345: Argument of type 'Uint8Array<ArrayBufferLike>[]' is not assignable to parameter of type 'BlobPart[]'.
+  Type 'Uint8Array<ArrayBufferLike>' is not assignable to type 'BlobPart'.
+    Type 'Uint8Array<ArrayBufferLike>' is not assignable to type 'ArrayBufferView<ArrayBuffer>'.
+      Types of property 'buffer' are incompatible.
+        Type 'ArrayBufferLike' is not assignable to type 'ArrayBuffer'.
+          Type 'SharedArrayBuffer' is not assignable to type 'ArrayBuffer'.
+            Types of property '[Symbol.toStringTag]' are incompatible.
+              Type '"SharedArrayBuffer"' is not assignable to type '"ArrayBuffer"'.
 src/shared/jiten/set-card-sentence.ts(10,3): error TS2322: Type 'Promise<void | JitenParseResult | JitenLookupVocabularyResult | JitenBatchReviewResult | StudyDeckListItem[]>' is not assignable to type 'Promise<void>'.
   Type 'void | JitenParseResult | JitenLookupVocabularyResult | JitenBatchReviewResult | StudyDeckListItem[]' is not assignable to type 'void'.
     Type 'JitenParseResult' is not assignable to type 'void'.

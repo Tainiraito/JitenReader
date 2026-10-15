@@ -1,4 +1,3 @@
-import { DEFAULT_API_REQUEST_TIMEOUT_SECONDS } from '../jiten/api-request-timeout';
 import { JitenCardState } from '../jiten/types';
 import {
   DEFAULT_READER_BOLD,
@@ -23,7 +22,6 @@ export const DEFAULT_CONFIGURATION = Object.freeze<ConfigurationSchema>({
 
   jitenApiKey: '',
   jitenApiEndpoint: 'https://api.jiten.moe/api',
-  jitenApiTimeout: DEFAULT_API_REQUEST_TIMEOUT_SECONDS,
 
   //#endregion
   //#region Mining configuration

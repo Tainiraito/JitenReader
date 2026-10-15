@@ -1,18 +1,18 @@
 # Long-text validation — personal/all-in-one
 
-Date: 2026-10-02. Baseline: upstream v1.4.0 and the existing personal timeout/defaults branch.
+Date: 2026-10-15. Baseline: upstream dev 5d5d9cb92d8128d258342a6c19ab1d2014980c6f (1.4.1).
 
-The personal/all-in-one branch retains the validated personal/parse-cache implementation and merges the configurable API timeout feature. The personal default remains 60 seconds, adjustable per profile from 1 to 300 seconds. All 22 cache tests and 4 timeout tests pass together. The built settings page also passes isolated Chrome checks for personal defaults, persistence, validation and profile isolation; evidence is in ../JitenReader-validation/综合自用版. Storage/runtime are simulated and no live API is called. The separate upstream contribution branch retains its 10-second default.
+The personal/all-in-one branch merges upstream 1.4.1 while retaining persistent content/state caching, viewport scheduling, personal defaults and TTS receiver handling. Requests now use upstream staged deadlines (10s headers, 15s stalled body, 300s total body), with its retry rules. The configurable timeout UI and helper are removed; old stored settings are ignored. Existing IndexedDB schema and content namespace are retained because raw token storage is unchanged; surface furigana is reconstructed using the new upstream logic on every use. All 28 regression tests pass, including cached furigana alignment and simulated staged deadlines.
 
 ## Regression checks
 
-Run `npm run test:parse-cache` (Node 24). All 22 tests pass. Coverage includes independent state refresh and targeted review invalidation, racing broadcasts, hashed account/server scopes, concurrent paragraph requests, failed responses, disk restoration under memory pressure, forced clearing during pending requests, cancellation of old page waits, bounded priority dispatch, and the real API-wrapper/Parser conversion chain.
+Run `npm run test:parse-cache` (Node 24). All 23 cache/integration tests pass; the separate five timeout tests use mocked timers. Coverage includes independent state refresh and targeted review invalidation, racing broadcasts, hashed account/server scopes, concurrent paragraph requests, failed responses, disk restoration under memory pressure, forced clearing during pending requests, cancellation of old page waits, bounded priority dispatch, and the real API-wrapper/Parser conversion chain.
 
-Run ESLint on changed TypeScript files, and `npm run build chrome`. Both pass. Full `npm run typecheck` still reports upstream errors; comparing normalized diagnostic lines with `TYPECHECK-UPSTREAM.txt` shows no new diagnostics. Broadcast schema updates remove some existing errors.
+Run ESLint on changed TypeScript files, and `npm run build chrome`. Both pass. Full `npm run typecheck` still reports upstream errors; comparing normalized diagnostic lines with the updated `TYPECHECK-UPSTREAM.txt` shows no new diagnostics (20 personal vs 23 upstream). Broadcast schema updates remove some existing errors.
 
 ## Browser checks
 
-An isolated, headless installed Chrome profile runs a local Ttsu-style fixture. The Browser plugin was unavailable, so verification uses bundled Playwright. The fixture imports the real `TtsuParagraphReader`, `TtsuTextHighlighter`, `TtsuParseScheduler`, `ParseCache` and `IndexedDbContentStorage`. Vocabulary API responses and Registry event wiring are simulated; the user's browser profile, account and books are not accessed.
+An isolated, headless installed Chrome profile runs a local Ttsu-style fixture through the real TtsuParser and scheduler. The same-id TXT child replacement parses newly visible text and resets sentence state. Built settings checks verify the removed timeout field and preservation of saved settings at desktop and 390px widths. The Browser plugin was unavailable, so verification uses bundled Playwright. The fixture imports the real `TtsuParser`, `TtsuParagraphReader`, `TtsuTextHighlighter`, `TtsuParseScheduler`, `ParseCache` and `IndexedDbContentStorage`. Vocabulary API responses and Registry event wiring are simulated; the user's browser profile, account and books are not accessed.
 
 | Check | Observed result |
 | --- | --- |
@@ -26,7 +26,7 @@ An isolated, headless installed Chrome profile runs a local Ttsu-style fixture. 
 | Disk limit forced to 3500 bytes | LRU retains 6 paragraphs / 3241 estimated bytes, with correct dictionary references |
 | Errors | No fixture page errors or scheduler errors |
 
-Local harness, reports and screenshots are grouped in `../JitenReader-validation/`, outside the source tree. Screenshots are checked for visible content and unexpected overlays. Background prefetch does not apply highlighting until text becomes visible.
+Local harness, reports and screenshots are grouped in `../JitenReader-validation/上游同步-2026-10-15/`, outside the source tree. Screenshots are checked for visible content and unexpected overlays. Background prefetch does not apply highlighting until text becomes visible.
 
 ## User acceptance remaining
 

@@ -94,7 +94,7 @@ test('stopping TTS without an offscreen receiver is safe, including closure race
   await assert.rejects(stopTtsAudio(), /Unexpected failure/);
 });
 
-test('response body timeout identifies the API and 60-second limit without request secrets', async () => {
+test('response body timeout identifies the API and 300-second limit without request secrets', async () => {
   const originalFetch = global.fetch;
   const { requestByUrl } = loadTs('src/shared/jiten/request-by-url.ts', {
     '../configuration/get-configuration': { getConfiguration: async () => 'private-key' },
@@ -106,7 +106,7 @@ test('response body timeout identifies the API and 60-second limit without reque
     return {
       ok: true,
       status: 200,
-      json: async () => {
+      text: async () => {
         throw new DOMException('signal timed out', 'TimeoutError');
       },
     };
@@ -115,7 +115,7 @@ test('response body timeout identifies the API and 60-second limit without reque
     await assert.rejects(
       requestByUrl('https://example.test/api', 'reader/parse', { text: ['private text'] }),
       (error) => {
-        assert.match(error.message, /60s.*reader\/parse.*reading response body/);
+        assert.match(error.message, /300s.*reader\/parse.*reading response body/);
         assert.ok(!error.message.includes('private'));
         return true;
       },
@@ -642,7 +642,7 @@ test('API mutations invalidate only state at start and completion; read actions 
     './rate-limited-error': { RateLimitedError: class extends Error {} },
     './parse-cache': { parseCache: { invalidateStates: () => clears++ } },
   });
-  global.fetch = async () => ({ ok: true, status: 200, json: async () => ({}) });
+  global.fetch = async () => ({ ok: true, status: 200, text: async () => '{}' });
   try {
     for (const action of [
       'reader/parse',
@@ -665,11 +665,76 @@ test('API mutations invalidate only state at start and completion; read actions 
     global.fetch = async () => ({
       ok: true,
       status: 200,
-      json: async () => ({ error_message: 'failed mutation' }),
+      text: async () => JSON.stringify({ error_message: 'failed mutation' }),
     });
     await assert.rejects(requestByUrl(undefined, 'srs/review'), /failed mutation/);
     assert.equal(clears, 10);
   } finally {
     global.fetch = originalFetch;
   }
+});
+
+test('upstream surface furigana stays correct when raw paragraphs are served from cache', async () => {
+  const cache = new ParseCache();
+  let network = 0;
+  const examples = [
+    ['来た', '来[く]る', '来る', ['き']],
+    ['来ない', '来[く]る', '来る', ['こ']],
+    ['来る', '来[く]る', '来る', ['く']],
+    ['得ない', '得[う]る', '得る', ['え']],
+    ['１本', '１[いっ]本[ぽん]', '１本', ['いっ', 'ぽん']],
+    ['違う', '来[く]る', '来る', []],
+  ];
+  const { Parser } = loadTs('src/background-worker/parser/parser.ts', {
+    '@shared/jiten/parse': {
+      parse: (texts, options) =>
+        cache.parse('same-format-v2', texts, async (requested) => {
+          network++;
+          options.onNetworkRequest?.();
+          return {
+            tokens: requested.map((text) => [
+              {
+                wordId: examples.findIndex((e) => e[0] === text) + 1,
+                readingIndex: 0,
+                start: 0,
+                end: text.length,
+                length: text.length,
+                conjugations: [],
+              },
+            ]),
+            vocabulary: requested.map((text) => {
+              const i = examples.findIndex((e) => e[0] === text);
+              return {
+                ...word(),
+                wordId: i + 1,
+                reading: examples[i][1],
+                spelling: examples[i][2],
+              };
+            }),
+          };
+        }),
+    },
+    './pitch-accent-utils': { getPitchClass: () => '' },
+  });
+  const run = async () => {
+    const groups = [];
+    const requested = await new Parser({
+      strings: examples.map((e) => e[0]),
+      handles: examples.map(() => ({ resolve: (v) => groups.push(v) })),
+    }).parse();
+    return { groups, requested };
+  };
+  const first = await run(),
+    again = await run();
+  assert.equal(network, 1);
+  assert.equal(first.requested, true);
+  assert.equal(again.requested, false);
+  assert.deepEqual(first.groups, again.groups);
+  again.groups.forEach((group, i) => {
+    assert.deepEqual(
+      group[0].rubies.map((r) => r.text),
+      examples[i][3],
+    );
+    assert.ok(group[0].rubies.every((r) => r.end <= examples[i][0].length));
+  });
 });
